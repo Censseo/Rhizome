@@ -48,14 +48,14 @@ abstract class AbstractPeerManagerService implements PeerManagerService, Eventlo
 
     private final Map<Object, Peer> connectedPeers = new HashMap<>();
     private final Map<Object, Peer> connectedPeersView = unmodifiableMap(connectedPeers);
+
     /**
- 
-    * Private constructor
+     * Private constructor
      * 
      * @param eventloop
      * @param discoveryService
      */
-    AbstractPeerManagerService(Eventloop eventloop, DiscoveryService discoveryService) {
+    protected AbstractPeerManagerService(Eventloop eventloop, DiscoveryService discoveryService) {
         this.eventloop = eventloop;
         this.discoveryService = discoveryService;
     }

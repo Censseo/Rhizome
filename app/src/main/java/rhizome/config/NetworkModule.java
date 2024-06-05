@@ -33,9 +33,11 @@ public final class NetworkModule extends AbstractModule {
     }
 
     @Provides 
-    PeerSystem peerSystem() {
+    PeerSystem peerSystem(Peer localhostPeer) {
         //config.get(ofString(), "cluster"), 
-        return GossipSystem.builder().build();
+        return GossipSystem.builder()
+                .localhostPeer(localhostPeer)
+                .build();
     }
     
     @Provides 
@@ -50,5 +52,10 @@ public final class NetworkModule extends AbstractModule {
                 .map(ipAddress -> PeerInitializer.fromAddress(new InetSocketAddress(ipAddress, 8080))) 
                 .forEach(peer -> peers.put(peer.address(), peer));
         return peers;
+    }
+
+    @Provides
+    Peer localhostPeer(Config config) {
+        return PeerInitializer.fromAddress(new InetSocketAddress(config.get(ConfigConverters.ofString(), "ip"), 8080));
     }
 }

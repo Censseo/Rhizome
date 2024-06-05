@@ -13,7 +13,6 @@ import io.activej.http.HttpRequest;
 import io.activej.promise.Promise;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import rhizome.net.p2p.DiscoveryService;
 import rhizome.net.p2p.PeerState;
@@ -24,12 +23,11 @@ import rhizome.net.protocol.Message;
 
 import static io.activej.common.Checks.checkState;
 
-@Builder @Getter @Setter @Slf4j
+@Builder @Getter @Slf4j
 public class GossipSystem implements PeerSystem {
 
-    private Peer localhostPeer;
-
-    private AsyncHttpClient httpClient;
+    private final Peer localhostPeer;
+    private final AsyncHttpClient httpClient;
     @Builder.Default private DslJson<Object> dslJson = new DslJson<>();
 
     // private RpcServer peerServer;

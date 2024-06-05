@@ -13,7 +13,7 @@ import rhizome.config.NetworkModule;
 
 import static java.util.concurrent.Executors.newCachedThreadPool;
 
-public final class App extends Launcher {
+public final class Node extends Launcher {
 
     @Provides
     Eventloop eventloop() {
@@ -29,7 +29,7 @@ public final class App extends Launcher {
     protected Module getModule() {
 		return ModuleBuilder.create()
 				.install(ServiceGraphModule.create())
-                .install(Api.create())
+                // .install(Api.create())
                 .install(NetworkModule.create())
 				.build();
 	}
@@ -41,7 +41,6 @@ public final class App extends Launcher {
 
     public static void main(String[] args) throws Exception {
         Injector.useSpecializer();
-        Launcher launcher = new App();
-        launcher.launch(args);
+        new Node().launch(args);
     }
 }

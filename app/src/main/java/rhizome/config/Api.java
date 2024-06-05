@@ -1,4 +1,4 @@
-package rhizome.server;
+package rhizome.config;
 
 import java.util.concurrent.Executor;
 

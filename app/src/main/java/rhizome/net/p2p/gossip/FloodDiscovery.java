@@ -50,11 +50,6 @@ public class FloodDiscovery implements DiscoveryService {
 					);
 		}
 
-		// Error handling
-		if (error != null) {
-			cb.accept(null, error);
-		}
-
 		// Check if the discovered addresses are the same as the previous ones
 		if (discovered.size() == totalDiscovered.size() && !totalDiscovered.equals(previous)) {
 			cb.accept(totalDiscovered, null);
@@ -105,7 +100,7 @@ public class FloodDiscovery implements DiscoveryService {
 	private void onError(@NotNull Exception e, Callback<Map<Object, Peer>> cb) {
 		error = e;
 		if (error != null) {
-			cb.accept(null, error);
+ 			cb.accept(null, error);
 		} else {
 			Map<Object, Peer> totalDiscoveredMap = new HashMap<>();
 			discovered.forEach(address -> totalDiscoveredMap.put(address, null));

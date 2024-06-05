@@ -32,7 +32,14 @@
 				"redhat.fabric8-analytics",
 				"SonarSource.sonarlint-vscode",
 				"GitHub.copilot",
-				"GitHub.copilot-chat"
+				"GitHub.copilot-chat",
+				"vscjava.vscode-java-test",
+				"ms-vscode.hexeditor",
+				"redhat.java",
+				"waderyan.gitblame",
+				"donjayamanne.githistory",
+				"arturock.gitstash",
+				"donjayamanne.git-extension-pack"
 			]
 		}
 	}

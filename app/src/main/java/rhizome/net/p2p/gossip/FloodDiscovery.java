@@ -10,7 +10,6 @@ import rhizome.net.p2p.peer.PeerInitializer;
 
 import java.net.InetSocketAddress;
 
-import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.util.*;
@@ -20,12 +19,11 @@ import java.util.*;
  * It implement a flood discovery algorithm, gathering all the peers from each peer discovered.
  */
 @Builder
-public class FloodDiscovery implements DiscoveryService {
+public final class FloodDiscovery implements DiscoveryService {
 
-	private Exception error;
 	private final PeerSystem peerSystem;
 	private final List<InetSocketAddress> discovered = new ArrayList<>();
-	@Builder.Default private Map<Object, Peer> totalDiscovered = new HashMap<>();
+	@Builder.Default private Map<Object, Peer> totalDiscovered = Collections.emptyMap();
 
 	/**
 	 * Main call of the interface. It discovers peers using the PeerSystem provided.
@@ -44,7 +42,7 @@ public class FloodDiscovery implements DiscoveryService {
 								if (e == null) {
 									onDiscover(result);
 								} else {
-									onError(e, cb);
+									cb.accept(null, e);
 								}
 							})
 					);
@@ -90,21 +88,5 @@ public class FloodDiscovery implements DiscoveryService {
 
 		// Update the total discovered peers
 		this.totalDiscovered = Collections.unmodifiableMap(newTotalDiscovered);
-	}
-
-	/**
-	 * Error handling
-	 * @param e
-	 * @param cb
-	 */
-	private void onError(@NotNull Exception e, Callback<Map<Object, Peer>> cb) {
-		error = e;
-		if (error != null) {
- 			cb.accept(null, error);
-		} else {
-			Map<Object, Peer> totalDiscoveredMap = new HashMap<>();
-			discovered.forEach(address -> totalDiscoveredMap.put(address, null));
-			cb.accept(totalDiscoveredMap, error);
-		}
 	}
 }

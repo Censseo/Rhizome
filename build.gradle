@@ -61,6 +61,10 @@ subprojects {
 
         // TODO: TBD
         implementation 'org.json:json:20240303'
+        // implementation 'com.dslplatform:dsl-json:2.0.2'
+
+        // JNI support for crypto libs PUFFERFISH2
+        // implementation 'org.bytedeco:javacpp:1.5.9'
 
         // This dependency is used by the application.
         implementation 'com.google.guava:guava:31.1-jre'

@@ -1,0 +1,18 @@
+plugins {
+    id 'application'
+}
+
+dependencies {
+    implementation project(':lib-core')
+    implementation project(':lib-net')
+}
+
+application {
+    // Define the main class for the application.
+    mainClass = 'rhizome.server.App'
+}
+
+tasks.named('test') {
+    // Use JUnit Platform for unit tests.
+    useJUnitPlatform()
+}

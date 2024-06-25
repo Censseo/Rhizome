@@ -6,6 +6,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import io.activej.async.function.AsyncRunnable;
 import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;
+import rhizome.core.services.BaseService;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mock;

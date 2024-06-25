@@ -3,7 +3,7 @@ package rhizome.services.blockchain;
 import org.jetbrains.annotations.NotNull;
 import lombok.Getter;
 import lombok.Setter;
-
+import rhizome.core.blockchain.AbstractBlockchain;
 import io.activej.async.service.EventloopService;
 import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;

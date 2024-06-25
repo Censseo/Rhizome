@@ -1,4 +1,4 @@
-package rhizome.services.blockchain;
+package rhizome.core.blockchain;
 
 import java.util.List;
 import java.util.Map;
@@ -13,6 +13,7 @@ import rhizome.core.crypto.SHA256Hash;
 import rhizome.core.ledger.Ledger;
 import rhizome.persistence.BlockPersistence;
 import rhizome.persistence.TransactionStore;
+import rhizome.services.blockchain.MemPool;
 
 @Getter
 @Setter

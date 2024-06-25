@@ -8,4 +8,4 @@
  */
 
 rootProject.name = 'Rhizome'
-include 'app', 'lib-core'
+include 'app', 'lib-core', 'lib-crypto', 'lib-persistence', 'lib-net'

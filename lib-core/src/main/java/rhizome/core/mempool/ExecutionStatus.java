@@ -1,4 +1,4 @@
-package rhizome.services.mempool.executor;
+package rhizome.core.mempool;
 
 public enum ExecutionStatus {
     SENDER_DOES_NOT_EXIST,

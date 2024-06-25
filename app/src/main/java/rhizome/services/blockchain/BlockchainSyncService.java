@@ -2,7 +2,7 @@ package rhizome.services.blockchain;
 
 import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;
-import rhizome.services.BaseService;
+import rhizome.core.services.BaseService;
 import rhizome.services.network.PeerManagerService;
 
 public class BlockchainSyncService extends BaseService {

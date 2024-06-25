@@ -1,4 +1,4 @@
-package rhizome.services;
+package rhizome.core.services;
 
 import java.util.Collections;
 import java.util.List;

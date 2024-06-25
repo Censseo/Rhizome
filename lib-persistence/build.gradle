@@ -1,0 +1,11 @@
+plugins {
+    id 'java-library'
+}
+
+dependencies {
+    implementation project(':lib-core')
+    
+    // CQEngine
+    implementation 'com.github.npgall:cqengine:3.6.0'
+    // implementation 'com.googlecode.cqengine:cqengine:3.6.0'
+}

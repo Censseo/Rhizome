@@ -1,5 +1,5 @@
 package rhizome.core.mempool;
 
-public interface Mempool {
+public interface MemPool {
     
 }

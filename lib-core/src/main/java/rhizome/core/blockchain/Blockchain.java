@@ -1,4 +1,4 @@
-package rhizome.services.blockchain;
+package rhizome.core.blockchain;
 
 public interface Blockchain {
 

@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.net.InetSocketAddress;
 
-import com.dslplatform.json.DslJson;
+// import com.dslplatform.json.DslJson;
 
 import io.activej.http.AsyncHttpClient;
 import io.activej.http.HttpRequest;
@@ -28,7 +28,7 @@ public class GossipSystem implements PeerSystem {
 
     private final Peer localhostPeer;
     private final AsyncHttpClient httpClient;
-    @Builder.Default private DslJson<Object> dslJson = new DslJson<>();
+    // @Builder.Default private DslJson<Object> dslJson = new DslJson<>();
 
     // private RpcServer peerServer;
 
@@ -63,17 +63,17 @@ public class GossipSystem implements PeerSystem {
         }
     }
 
-    @Override
-    public Promise<List<InetSocketAddress>> getPeers(Peer peer) {
-        return httpClient.request(HttpRequest.get(peer.address() + "/peers"))
-                .then(response -> response.loadBody())
-                .map(body -> {
-                    var peerBytes = body.getString(UTF_8).getBytes();
-                    return dslJson.deserializeList(String.class, peerBytes, peerBytes.length).stream()
-                            .map(address -> new InetSocketAddress(address.split(":")[0], Integer.parseInt(address.split(":")[1])))
-                            .toList();
-                });
-    }
+    // @Override
+    // public Promise<List<InetSocketAddress>> getPeers(Peer peer) {
+    //     return httpClient.request(HttpRequest.get(peer.address() + "/peers"))
+    //             .then(response -> response.loadBody())
+    //             .map(body -> {
+    //                 var peerBytes = body.getString(UTF_8).getBytes();
+    //                 return dslJson.deserializeList(String.class, peerBytes, peerBytes.length).stream()
+    //                         .map(address -> new InetSocketAddress(address.split(":")[0], Integer.parseInt(address.split(":")[1])))
+    //                         .toList();
+    //             });
+    // }
 
     @Override
     public DiscoveryService getDiscoveryService(Map<Object, Peer> peers, PeerSystem peerSystem) {
@@ -92,5 +92,11 @@ public class GossipSystem implements PeerSystem {
     public void broadcast(Map<Object, Peer> alivePeers, Message message) {
         // TODO Auto-generated method stub
         throw new UnsupportedOperationException("Unimplemented method 'broadcast'");
+    }
+
+    @Override
+    public Promise<List<InetSocketAddress>> getPeers(Peer peer) {
+        // TODO Auto-generated method stub
+        throw new UnsupportedOperationException("Unimplemented method 'getPeers'");
     }
 }

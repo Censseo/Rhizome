@@ -25,7 +25,7 @@ import rhizome.core.api.PeerInterface;
 import rhizome.core.common.Pair;
 import rhizome.core.crypto.SHA256Hash;
 import rhizome.net.p2p.peer.PeerOLD;
-import rhizome.persistence.BlockPersistence;
+// import rhizome.persistence.BlockPersistence;
 
 @Slf4j
 public class GossipSystemOLD {
@@ -286,13 +286,13 @@ public class GossipSystemOLD {
         for (String h : hosts) {
             Map<Long, SHA256Hash> checkpoints = null;
             Map<Long, SHA256Hash> bannedHashes = null;
-            BlockPersistence blockStore = null;
+            // BlockPersistence blockStore = null;
             currPeers.add(
                 PeerOLD.builder()
                 .host(h)
                 .checkPoints(checkpoints)
                 .bannedHashes(bannedHashes)
-                .blockStore(blockStore)
+                // .blockStore(blockStore)
                 .build());
         }
     }

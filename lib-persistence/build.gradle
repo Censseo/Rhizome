@@ -4,8 +4,14 @@ plugins {
 
 dependencies {
     implementation project(':lib-core')
-    
+
     // CQEngine
     implementation 'com.github.npgall:cqengine:3.6.0'
     // implementation 'com.googlecode.cqengine:cqengine:3.6.0'
+
+    // https://mvnrepository.com/artifact/org.iq80.leveldb/leveldb
+    implementation 'org.iq80.leveldb:leveldb:0.12'
+
+    // https://mvnrepository.com/artifact/commons-io/commons-io
+    implementation 'commons-io:commons-io:2.15.0'
 }

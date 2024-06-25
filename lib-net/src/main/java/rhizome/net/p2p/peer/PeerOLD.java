@@ -17,7 +17,7 @@ import rhizome.core.block.dto.BlockDto;
 import rhizome.core.common.Constants;
 import rhizome.core.crypto.SHA256Hash;
 import rhizome.core.transaction.Transaction;
-import rhizome.persistence.BlockPersistence;
+// import rhizome.persistence.BlockPersistence;
 
 // TODO: basic translation from C++ , need refactor
 @Data
@@ -30,7 +30,7 @@ public class PeerOLD {
     private long offset;
     private BigInteger totalWork;
     private long chainLength;
-    private BlockPersistence blockStore;
+    // private BlockPersistence blockStore;
     private boolean triedBlockStoreCache;
     private List<Thread> syncThread;
     private Map<Long, SHA256Hash> checkPoints;

@@ -11,9 +11,9 @@ import lombok.Getter;
 import lombok.Setter;
 import rhizome.core.crypto.SHA256Hash;
 import rhizome.core.ledger.Ledger;
-import rhizome.persistence.BlockPersistence;
-import rhizome.persistence.TransactionStore;
-import rhizome.services.blockchain.MemPool;
+// import rhizome.persistence.BlockPersistence;
+// import rhizome.persistence.TransactionStore;
+// import rhizome.services.blockchain.MemPool;
 
 @Getter
 @Setter
@@ -21,13 +21,13 @@ public abstract class AbstractBlockchain implements Blockchain {
 
     protected boolean isSyncing;
     protected boolean shutdown;
-    protected MemPool memPool;
+    // protected MemPool memPool;
     protected int numBlocks;
     protected int retries;
     protected BigInteger totalWork;
-    protected BlockPersistence persistence;
+    // protected BlockPersistence persistence;
     protected Ledger ledger;
-    protected TransactionStore txdb;
+    // protected TransactionStore txdb;
     protected SHA256Hash lastHash;
     protected int difficulty;
     protected int targetBlockCount;

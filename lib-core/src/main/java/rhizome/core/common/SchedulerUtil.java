@@ -1,14 +1,14 @@
 package rhizome.core.common;
 
 import io.activej.async.function.AsyncSupplier;
-import io.activej.async.service.EventloopTaskScheduler;
+import io.activej.async.service.TaskScheduler;
 import io.activej.eventloop.Eventloop;
 
 import java.time.Duration;
 import java.time.LocalTime;
 import java.time.temporal.ChronoUnit;
 
-import static io.activej.async.service.EventloopTaskScheduler.Schedule.ofInterval;
+import static io.activej.async.service.TaskScheduler.Schedule.ofInterval;
 
 /**
  * Utility class for scheduling tasks.
@@ -23,15 +23,15 @@ public class SchedulerUtil {
      * @param task
      * @return
      */
-    public static EventloopTaskScheduler scheduleHourly(Eventloop eventloop, AsyncSupplier<Void> task) {
+    public static TaskScheduler scheduleHourly(Eventloop eventloop, AsyncSupplier<Void> task) {
         LocalTime now = LocalTime.now();
         LocalTime nextHour = now.truncatedTo(ChronoUnit.HOURS).plusHours(1);
 
         long initialDelayMinutes = now.until(nextHour, ChronoUnit.MINUTES);
-
-        return EventloopTaskScheduler.create(eventloop, task)
+        return TaskScheduler.builder(eventloop, task)
                 .withSchedule(ofInterval(Duration.ofHours(1)))
-                .withInitialDelay(Duration.ofMinutes(initialDelayMinutes));
+                .withInitialDelay(Duration.ofMinutes(initialDelayMinutes))
+                .build();
     }
 
     /**
@@ -40,15 +40,15 @@ public class SchedulerUtil {
      * @param task
      * @return
      */
-    public static EventloopTaskScheduler scheduleEveryMinute(Eventloop eventloop, AsyncSupplier<Void> task) {
+    public static TaskScheduler scheduleEveryMinute(Eventloop eventloop, AsyncSupplier<Void> task) {
         LocalTime now = LocalTime.now();
         LocalTime nextMinute = LocalTime.of(now.getHour(), now.getMinute()).plusMinutes(1);
 
         long initialDelaySeconds = now.until(nextMinute, ChronoUnit.SECONDS);
-
-        return EventloopTaskScheduler.create(eventloop, task)
+        return TaskScheduler.builder(eventloop, task)
                 .withSchedule(ofInterval(Duration.ofMinutes(1)))
-                .withInitialDelay(Duration.ofSeconds(initialDelaySeconds));
+                .withInitialDelay(Duration.ofSeconds(initialDelaySeconds))
+                .build();
     }
 
     /**
@@ -57,15 +57,16 @@ public class SchedulerUtil {
      * @param task
      * @return
      */
-    public static EventloopTaskScheduler scheduleEvery30Seconds(Eventloop eventloop, AsyncSupplier<Void> task) {
+    public static TaskScheduler scheduleEvery30Seconds(Eventloop eventloop, AsyncSupplier<Void> task) {
         LocalTime now = LocalTime.now();
         LocalTime next30Seconds = LocalTime.of(now.getHour(), now.getMinute(), now.getSecond()).plusSeconds(30);
 
         long initialDelayMillis = now.until(next30Seconds, ChronoUnit.MILLIS);
 
-        return EventloopTaskScheduler.create(eventloop, task)
+        return TaskScheduler.builder(eventloop, task)
                 .withSchedule(ofInterval(Duration.ofSeconds(30)))
-                .withInitialDelay(Duration.ofMillis(initialDelayMillis));
+                .withInitialDelay(Duration.ofMillis(initialDelayMillis))
+                .build();
     }
 
     /**
@@ -74,15 +75,16 @@ public class SchedulerUtil {
      * @param task
      * @return
      */
-    public static EventloopTaskScheduler scheduleEvery10Seconds(Eventloop eventloop, AsyncSupplier<Void> task) {
+    public static TaskScheduler scheduleEvery10Seconds(Eventloop eventloop, AsyncSupplier<Void> task) {
         LocalTime now = LocalTime.now();
         LocalTime next10Seconds = LocalTime.of(now.getHour(), now.getMinute(), now.getSecond()).plusSeconds(10);
 
         long initialDelayMillis = now.until(next10Seconds, ChronoUnit.MILLIS);
 
-        return EventloopTaskScheduler.create(eventloop, task)
+        return TaskScheduler.builder(eventloop, task)
                 .withSchedule(ofInterval(Duration.ofSeconds(10)))
-                .withInitialDelay(Duration.ofMillis(initialDelayMillis));
+                .withInitialDelay(Duration.ofMillis(initialDelayMillis))
+                .build();
     }
 
     /**
@@ -91,14 +93,15 @@ public class SchedulerUtil {
      * @param task
      * @return
      */
-    public static EventloopTaskScheduler scheduleEverySecond(Eventloop eventloop, AsyncSupplier<Void> task) {
+    public static TaskScheduler scheduleEverySecond(Eventloop eventloop, AsyncSupplier<Void> task) {
         LocalTime now = LocalTime.now();
         LocalTime nextSecond = LocalTime.of(now.getHour(), now.getMinute(), now.getSecond()).plusSeconds(1);
 
         long initialDelayMillis = now.until(nextSecond, ChronoUnit.MILLIS);
 
-        return EventloopTaskScheduler.create(eventloop, task)
+        return TaskScheduler.builder(eventloop, task)
                 .withSchedule(ofInterval(Duration.ofSeconds(1)))
-                .withInitialDelay(Duration.ofMillis(initialDelayMillis));
+                .withInitialDelay(Duration.ofMillis(initialDelayMillis))
+                .build();
     }
 }

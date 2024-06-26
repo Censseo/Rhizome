@@ -35,24 +35,24 @@ subprojects {
     dependencies {
 
         // ActiveJ
-        implementation 'io.activej:activej:5.5'
-        implementation 'io.activej:activej-inject:5.5'
-        implementation 'io.activej:activej-config:5.5'
-        implementation 'io.activej:activej-launcher:5.5'
-        implementation 'io.activej:activej-launchers-common:5.5'
-        implementation 'io.activej:activej-rpc:5.5'
-        implementation 'io.activej:activej-datastream:5.5'
-        implementation 'io.activej:activej-servicegraph:5.5'
-        implementation 'io.activej:activej-workers:5.5'
-        implementation 'io.activej:activej-serializer:5.5'
-        implementation 'io.activej:activej-boot:5.5'
-        implementation 'io.activej:activej-promise:5.5'
-        implementation 'io.activej:activej-eventloop:5.5'
-        implementation 'io.activej:activej-http:5.5'
-        implementation 'io.activej:activej-common:5.5'
-        implementation 'io.activej:activej-jmxapi:5.5'
-        implementation 'io.activej:activej-net:5.5'
-
+        implementation 'com.github.activej:activej:v6.0-beta2'
+        implementation 'io.activej:activej-inject:v6.0-beta2'
+        implementation 'io.activej:activej-config:v6.0-beta2'
+        implementation 'io.activej:activej-launcher:v6.0-beta2'
+        implementation 'io.activej:activej-launchers-common:v6.0-beta2'
+        implementation 'io.activej:activej-rpc:v6.0-beta2'
+        implementation 'io.activej:activej-datastream:v6.0-beta2'
+        implementation 'io.activej:activej-servicegraph:v6.0-beta2'
+        implementation 'io.activej:activej-workers:v6.0-beta2'
+        implementation 'io.activej:activej-serializer:v6.0-beta2'
+        implementation 'io.activej:activej-boot:v6.0-beta2'
+        implementation 'io.activej:activej-promise:v6.0-beta2'
+        implementation 'io.activej:activej-eventloop:v6.0-beta2'
+        implementation 'io.activej:activej-http:v6.0-beta2'
+        implementation 'io.activej:activej-common:v6.0-beta2'
+        implementation 'io.activej:activej-jmxapi:v6.0-beta2'
+        implementation 'io.activej:activej-net:v6.0-beta2'
+        
         // Logback
         implementation 'ch.qos.logback:logback-classic:1.5.3'
 

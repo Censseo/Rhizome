@@ -6,7 +6,7 @@ import io.activej.serializer.BinaryOutput;
 import io.activej.serializer.BinarySerializer;
 import io.activej.serializer.CompatibilityLevel;
 import io.activej.serializer.CorruptedDataException;
-import io.activej.serializer.SimpleSerializerDef;
+import io.activej.serializer.def.SimpleSerializerDef;
 import rhizome.core.crypto.SHA256Hash;
 
 public final class SerializerDefSHA256Hash extends SimpleSerializerDef<SHA256Hash> {

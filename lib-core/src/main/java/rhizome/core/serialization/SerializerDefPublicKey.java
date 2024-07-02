@@ -5,7 +5,7 @@ import io.activej.serializer.BinaryOutput;
 import io.activej.serializer.BinarySerializer;
 import io.activej.serializer.CompatibilityLevel;
 import io.activej.serializer.CorruptedDataException;
-import io.activej.serializer.SimpleSerializerDef;
+import io.activej.serializer.def.SimpleSerializerDef;
 import rhizome.core.crypto.PublicKey;
 
 public class SerializerDefPublicKey extends SimpleSerializerDef<PublicKey> {

@@ -8,20 +8,21 @@ import org.jetbrains.annotations.NotNull;
 
 import io.activej.async.function.AsyncRunnable;
 import io.activej.async.function.AsyncRunnables;
-import io.activej.async.service.EventloopService;
-import io.activej.eventloop.Eventloop;
+import io.activej.async.service.ReactiveService;
 import io.activej.promise.Promise;
+import io.activej.promise.Promises;
+import io.activej.reactor.AbstractReactive;
+import io.activej.reactor.Reactor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j @Getter
-public abstract class BaseService implements EventloopService {
+public abstract class BaseService extends AbstractReactive implements ReactiveService {
 
-    private Eventloop eventloop;
     private List<AsyncRunnable> routines = new ArrayList<>();
 
-    protected BaseService(Eventloop eventloop) {
-        this.eventloop = eventloop;
+    protected BaseService(Reactor reactor) {
+        super(reactor);
     }
 
     @Override
@@ -36,19 +37,8 @@ public abstract class BaseService implements EventloopService {
         return Promise.complete().whenResult(() -> log.info("|SERVICE STOPPED|"));
     }
 
-    @Override
-    public @NotNull Eventloop getEventloop() {
-        return eventloop;
-    }
-
     static Promise<Void> asyncRun(List<AsyncRunnable> runnables) {
-        return Promise.ofCallback(callback -> {
-            Promise<Void> promise = Promise.complete();
-            for (AsyncRunnable runnable : runnables) {
-                promise = promise.then(runnable::run);
-            }
-            promise.run(callback);
-        });
+        return Promises.all(runnables.stream().map(AsyncRunnable::run));
     }
 
     protected BaseService addRoutine(AsyncRunnable routine) {

@@ -41,10 +41,4 @@ public class PeerManagerServiceImpl extends AbstractPeerManagerService {
     public void sync() {
         // peerSystem.broadcast(connectedPeersView, message);
     }
-
-    @Override
-    public @NotNull Eventloop getEventloop() {
-        // TODO Auto-generated method stub
-        throw new UnsupportedOperationException("Unimplemented method 'getEventloop'");
-    }
 }

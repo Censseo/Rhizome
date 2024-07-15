@@ -37,7 +37,7 @@ import rhizome.core.common.Constants;
 import rhizome.core.common.Pair;
 import rhizome.core.crypto.SHA256Hash;
 import rhizome.net.p2p.peer.PeerOLD;
-import rhizome.persistence.BlockPersistence;
+// import rhizome.persistence.BlockPersistence;
 
 @Slf4j
 public class PeerManagerImplOLD {
@@ -47,7 +47,7 @@ public class PeerManagerImplOLD {
     private static final int ADD_PEER_BRANCH_FACTOR = 0;
     private static final long TIMEOUT_MS = 0;
     protected List<PeerOLD> currPeers;
-    protected BlockPersistence blockStore;
+    // protected BlockPersistence blockStore;
     protected final Lock lock = new ReentrantLock();
     protected boolean disabled;
     protected boolean firewall;
@@ -540,9 +540,9 @@ public class PeerManagerImplOLD {
         }
     }
 
-    public void setBlockstore(BlockPersistence blockStore) {
-        this.blockStore = blockStore;
-    }
+    // public void setBlockstore(BlockPersistence blockStore) {
+    //     this.blockStore = blockStore;
+    // }
 
     public int size() {
         return hosts.size();
@@ -577,7 +577,7 @@ public class PeerManagerImplOLD {
                 .host(h)
                 .checkPoints(checkpoints)
                 .bannedHashes(bannedHashes)
-                .blockStore(blockStore)
+                // .blockStore(blockStore)
                 .build());
         }
     }

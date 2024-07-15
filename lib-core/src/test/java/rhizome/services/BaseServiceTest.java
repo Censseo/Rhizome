@@ -35,8 +35,20 @@ class BaseServiceTest {
         // Prepare test data
         AsyncRunnable routine = mock(AsyncRunnable.class);
 
+        var customService = new BaseService(eventloop) {
+            @Override
+            public Promise<?> start() {
+                return null;
+            }
+
+            @Override
+            public Promise<?> stop() {
+                return null;
+            }
+        };
+
         // Call the method under test
-        BaseService result = baseService.addRoutine(routine);
+        BaseService result = customService.addRoutine(routine);
 
         // Verify the behavior
         assertEquals(baseService, result);

@@ -2,6 +2,7 @@ package rhizome.services.network;
 
 import java.time.Duration;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.HashMap;
 
 import org.jetbrains.annotations.NotNull;
@@ -9,10 +10,12 @@ import org.jetbrains.annotations.Nullable;
 
 import io.activej.async.function.AsyncRunnable;
 import io.activej.async.function.AsyncRunnables;
-import io.activej.async.service.EventloopService;
+import io.activej.async.service.ReactiveService;
 import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;
 import io.activej.promise.Promises;
+import io.activej.reactor.AbstractReactive;
+import io.activej.reactor.Reactor;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import rhizome.net.p2p.DiscoveryService;
@@ -29,9 +32,8 @@ import static io.activej.async.util.LogUtils.toLogger;
  * It also rediscover the peers.
  */
 @Slf4j @Getter
-abstract class AbstractPeerManagerService implements PeerManagerService, EventloopService {
+abstract class AbstractPeerManagerService extends AbstractReactive implements PeerManagerService, ReactiveService {
 
-    protected final Eventloop eventloop;
     protected final DiscoveryService discoveryService;
 
     private final AsyncRunnable checkAllPeers = AsyncRunnables.reuse(this::doCheckAllPeers);
@@ -55,8 +57,8 @@ abstract class AbstractPeerManagerService implements PeerManagerService, Eventlo
      * @param eventloop
      * @param discoveryService
      */
-    protected AbstractPeerManagerService(Eventloop eventloop, DiscoveryService discoveryService) {
-        this.eventloop = eventloop;
+    protected AbstractPeerManagerService(Reactor eventloop, DiscoveryService discoveryService) {
+        super(eventloop);
         this.discoveryService = discoveryService;
     }
 
@@ -74,7 +76,7 @@ abstract class AbstractPeerManagerService implements PeerManagerService, Eventlo
             if (e == null) {
                 peers.putAll(result);
                 alivePeers.putAll(result);
-                checkAllPeers().run(cb);
+                checkAllPeers().call(cb);
             } else {
                 cb.setException(e);
             }
@@ -108,7 +110,7 @@ abstract class AbstractPeerManagerService implements PeerManagerService, Eventlo
                 checkAllPeers().whenResult(this::rediscover);
             } else {
                 log.warn("Could not discover peers", e);
-                eventloop.delayBackground(Duration.ofSeconds(PING_INTERVAL), this::rediscover);
+                getReactor().delayBackground(Duration.ofSeconds(PING_INTERVAL), this::rediscover);
             }
         });
     }

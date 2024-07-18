@@ -6,8 +6,6 @@ import java.util.List;
 import java.util.Map;
 import java.net.InetSocketAddress;
 
-// import com.dslplatform.json.DslJson;
-
 import io.activej.http.AsyncHttpClient;
 import io.activej.http.HttpRequest;
 import io.activej.promise.Promise;

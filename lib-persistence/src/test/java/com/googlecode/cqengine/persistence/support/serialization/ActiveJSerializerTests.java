@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Test;
 
 import io.activej.serializer.annotations.Deserialize;
 import io.activej.serializer.annotations.Serialize;
-import serialization.ActiveJSerializer;
 
 class ActiveJSerializerTests {
 

@@ -1,4 +1,4 @@
-package serialization;
+package com.googlecode.cqengine.persistence.support.serialization;
 
 import com.googlecode.cqengine.persistence.support.serialization.PersistenceConfig;
 import com.googlecode.cqengine.persistence.support.serialization.PojoSerializer;
@@ -6,7 +6,7 @@ import com.googlecode.cqengine.persistence.support.serialization.PojoSerializer;
 import io.activej.bytebuf.ByteBuf;
 import io.activej.bytebuf.ByteBufPool;
 import io.activej.serializer.BinarySerializer;
-import io.activej.serializer.SerializerBuilder;
+import io.activej.serializer.SerializerFactory;
 
 /**
  * A serializer which uses ActiveJ to serialize and deserialize objects.
@@ -64,7 +64,7 @@ public class ActiveJSerializer<O> implements PojoSerializer<O> {
      */
     @SuppressWarnings({"ArraysAsListWithZeroOrOneArgument", "WeakerAccess"})
     protected BinarySerializer<O> createBinarySerializer(Class<O> objectType) {
-        return SerializerBuilder.create().build(objectType);
+        return SerializerFactory.builder().build().create(objectType);
     }
 
     @Override

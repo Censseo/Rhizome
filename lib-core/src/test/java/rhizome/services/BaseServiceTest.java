@@ -45,6 +45,11 @@ class BaseServiceTest {
             public Promise<?> stop() {
                 return null;
             }
+
+            @Override
+            public BaseService addRoutine(AsyncRunnable routine) {
+                return super.addRoutine(routine);
+            }
         };
 
         // Call the method under test

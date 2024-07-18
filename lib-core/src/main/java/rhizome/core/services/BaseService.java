@@ -46,6 +46,7 @@ public abstract class BaseService extends AbstractReactive implements ReactiveSe
         return this;
     }
 
+    @SuppressWarnings("unchecked")
     public <T extends BaseService> T build() {
         this.routines = Collections.unmodifiableList(routines.stream().map(AsyncRunnables::reuse).toList());
         return (T) this;

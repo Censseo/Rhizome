@@ -24,6 +24,7 @@ public interface BinarySerializable {
         return serializer.decode(buffer, pos);
     }
 
+    @SuppressWarnings("unchecked")
     public default <T extends BinarySerializable> byte[] toBuffer() {
         var buffer = new byte[getSize()];
         var serializer = getSerializer((Class<T>) this.getClass());
@@ -34,6 +35,7 @@ public interface BinarySerializable {
     @NotNull
     int getSize();
 
+    @SuppressWarnings("unchecked")
     static <T extends BinarySerializable> BinarySerializer<T> getSerializer(Class<T> clazz) {
         return (BinarySerializer<T>) serializerCache.computeIfAbsent(clazz, k ->
             SerializerFactory.builder()

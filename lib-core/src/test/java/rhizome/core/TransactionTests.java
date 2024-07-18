@@ -1,4 +1,4 @@
-package rhizome;
+package rhizome.core;
 
 import org.junit.jupiter.api.Test;
 

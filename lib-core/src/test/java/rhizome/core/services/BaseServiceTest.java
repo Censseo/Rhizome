@@ -1,15 +1,14 @@
-package rhizome.services;
+package rhizome.core.services;
 
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import io.activej.async.function.AsyncRunnable;
-import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;
-import rhizome.core.services.BaseService;
-
+import io.activej.reactor.Reactor;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -19,15 +18,12 @@ import static org.mockito.Mockito.*;
 
 class BaseServiceTest {
 
-    @Mock
-    private Eventloop eventloop;
-
-    private BaseService baseService;
+    @Mock private Reactor reactor;
+    @InjectMocks private CustomService customService;
 
     @BeforeEach
     void setUp() {
         MockitoAnnotations.openMocks(this);
-        baseService = new BaseService(eventloop) {};
     }
 
     @Test
@@ -35,45 +31,26 @@ class BaseServiceTest {
         // Prepare test data
         AsyncRunnable routine = mock(AsyncRunnable.class);
 
-        var customService = new BaseService(eventloop) {
-            @Override
-            public Promise<?> start() {
-                return null;
-            }
-
-            @Override
-            public Promise<?> stop() {
-                return null;
-            }
-
-            @Override
-            public BaseService addRoutine(AsyncRunnable routine) {
-                return super.addRoutine(routine);
-            }
-        };
-
         // Call the method under test
         BaseService result = customService.addRoutine(routine);
 
         // Verify the behavior
-        assertEquals(baseService, result);
-        assertEquals(1, baseService.routines().size());
-        assertEquals(routine, baseService.routines().get(0));
+        assertEquals(customService, result);
+        assertEquals(1, customService.routines().size());
+        assertEquals(routine, customService.routines().get(0));
     }
 
     @Test
     void testBuild() {
         // Prepare test data
         AsyncRunnable routine = mock(AsyncRunnable.class);
-        baseService.addRoutine(routine);
-
-        // Call the method under test
-        BaseService result = baseService.build();
+        
+        var result = customService.addRoutine(routine);
 
         // Verify the behavior
-        assertEquals(baseService, result);
-        assertEquals(1, baseService.routines().size());
-        assertNotEquals(routine, baseService.routines().get(0));
+        assertEquals(customService, result);
+        assertEquals(1, customService.routines().size());
+        assertNotEquals(routine, customService.routines().get(0));
     }
 
     @Test
@@ -105,5 +82,26 @@ class BaseServiceTest {
         assertEquals(true, flag2.get());
         verify(runnable1, times(1)).run();
         verify(runnable2, times(1)).run();
+    }
+
+    private static class CustomService extends BaseService {
+        public CustomService(Reactor reactor) {
+            super(reactor);
+        }
+
+        @Override
+        public Promise<?> start() {
+            return null;
+        }
+
+        @Override
+        public Promise<?> stop() {
+            return null;
+        }
+
+        @Override
+        public BaseService addRoutine(AsyncRunnable routine) {
+            return super.addRoutine(routine);
+        }
     }
 }

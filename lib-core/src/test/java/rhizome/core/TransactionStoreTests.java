@@ -1,3 +1,4 @@
+package rhizome.core;
 // package rhizome;
 
 // import org.junit.jupiter.api.*;

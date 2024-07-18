@@ -1,3 +1,4 @@
+package rhizome.core;
 // package rhizome;
 
 // import static org.junit.jupiter.api.Assertions.assertEquals;

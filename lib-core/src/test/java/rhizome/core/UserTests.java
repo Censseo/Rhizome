@@ -1,4 +1,4 @@
-package rhizome;
+package rhizome.core;
 
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static rhizome.core.common.Helpers.PDN;

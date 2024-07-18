@@ -1,4 +1,4 @@
-package rhizome;
+package rhizome.core;
 
 import org.bouncycastle.crypto.params.Ed25519PrivateKeyParameters;
 import org.junit.jupiter.api.Test;

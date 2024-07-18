@@ -137,6 +137,7 @@ class ActiveJSerializerTests {
             return PersistenceConfig.class;
         }
 
+        @SuppressWarnings("rawtypes")
         @Override
         public Class<? extends PojoSerializer> serializer() {
             return ActiveJSerializer.class;

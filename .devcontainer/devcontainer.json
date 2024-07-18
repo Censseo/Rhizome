@@ -19,7 +19,7 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	// "postCreateCommand": "java -version",
+	"postCreateCommand": "npm install -g vsce && git clone https://github.com/graalvm/vscode-extensions.git && cd vscode-extensions && vsce package && code --install-extension /home/vscode/vscode-extensions/graalvm/graalvm-0.5.31.vsix",
 
 	// Configure tool-specific properties.
 	"customizations": {
@@ -40,7 +40,8 @@
 				"donjayamanne.githistory",
 				"arturock.gitstash",
 				"donjayamanne.git-extension-pack",
-				"Continue.continue"
+				"Continue.continue",
+				"Phu1237.vs-browser"
 			]
 		}
 	}

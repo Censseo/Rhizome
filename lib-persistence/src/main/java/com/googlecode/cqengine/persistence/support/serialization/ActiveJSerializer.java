@@ -1,8 +1,5 @@
 package com.googlecode.cqengine.persistence.support.serialization;
 
-import com.googlecode.cqengine.persistence.support.serialization.PersistenceConfig;
-import com.googlecode.cqengine.persistence.support.serialization.PojoSerializer;
-
 import io.activej.bytebuf.ByteBuf;
 import io.activej.bytebuf.ByteBufPool;
 import io.activej.serializer.BinarySerializer;

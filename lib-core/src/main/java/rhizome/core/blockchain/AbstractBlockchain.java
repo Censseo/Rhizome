@@ -7,6 +7,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import org.bouncycastle.util.test.FixedSecureRandom.BigInteger;
 
+import io.activej.reactor.Reactor;
 import lombok.Getter;
 import lombok.Setter;
 import rhizome.core.crypto.SHA256Hash;
@@ -14,10 +15,10 @@ import rhizome.core.ledger.Ledger;
 // import rhizome.persistence.BlockPersistence;
 // import rhizome.persistence.TransactionStore;
 // import rhizome.services.blockchain.MemPool;
+import rhizome.core.services.BaseService;
 
-@Getter
-@Setter
-public abstract class AbstractBlockchain implements Blockchain {
+@Getter @Setter 
+public abstract class AbstractBlockchain extends BaseService implements Blockchain {
 
     protected boolean isSyncing;
     protected boolean shutdown;
@@ -34,5 +35,9 @@ public abstract class AbstractBlockchain implements Blockchain {
     protected final Lock lock = new ReentrantLock();
     protected List<Thread> syncThread;
     protected Map<Integer, SHA256Hash> checkpoints;
+    
+    protected AbstractBlockchain(Reactor reactor){
+        super(reactor);
+    }
 }
  

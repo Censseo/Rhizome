@@ -19,7 +19,7 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "npm install -g vsce && git clone https://github.com/graalvm/vscode-extensions.git && cd vscode-extensions && vsce package && code --install-extension /home/vscode/vscode-extensions/graalvm/graalvm-0.5.31.vsix && curl -fsSL https://ollama.com/install.sh | sh",
+	"postCreateCommand": "npm install -g vsce && git clone https://github.com/graalvm/vscode-extensions.git && cd vscode-extensions && vsce package && code --install-extension /home/vscode/vscode-extensions/graalvm/graalvm-0.5.31.vsix && curl -fsSL https://ollama.com/install.sh | sh && curl -sS https://webi.sh/gh | sh && source ~/.config/envman/PATH.env",
 
 	// Configure tool-specific properties.
 	"customizations": {

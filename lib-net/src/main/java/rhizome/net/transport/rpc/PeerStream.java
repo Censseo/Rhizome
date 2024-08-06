@@ -11,26 +11,27 @@ import org.jetbrains.annotations.NotNull;
 
 import io.activej.async.exception.AsyncCloseException;
 import io.activej.common.MemSize;
-import io.activej.csp.ChannelConsumer;
-import io.activej.csp.ChannelSupplier;
-import io.activej.datastream.AbstractStreamConsumer;
-import io.activej.datastream.AbstractStreamSupplier;
+import io.activej.csp.consumer.ChannelConsumers;
+import io.activej.csp.supplier.ChannelSuppliers;
+import io.activej.datastream.consumer.AbstractStreamConsumer;
 import io.activej.datastream.csp.ChannelDeserializer;
 import io.activej.datastream.csp.ChannelSerializer;
-import io.activej.net.socket.tcp.AsyncTcpSocket;
+import io.activej.datastream.supplier.AbstractStreamSupplier;
+import io.activej.net.socket.tcp.ITcpSocket;
 import io.activej.serializer.BinarySerializer;
 import rhizome.net.protocol.Message;
 
 public class PeerStream {
+
     private final ChannelDeserializer<Message> deserializer;
 	private final ChannelSerializer<Message> serializer;
     private Listener listener;
 	private final boolean server;
-	private final AsyncTcpSocket socket;
+	private final ITcpSocket socket;
 
-    private final AbstractStreamConsumer<Message> internalConsumer = new AbstractStreamConsumer<Message>() {};
+    private final AbstractStreamConsumer<Message> internalConsumer = new AbstractStreamConsumer<>() {};
 
-	private final AbstractStreamSupplier<Message> internalSupplier = new AbstractStreamSupplier<Message>() {
+	private final AbstractStreamSupplier<Message> internalSupplier = new AbstractStreamSupplier<>() {
 		@Override
 		protected void onResumed() {
 			deserializer.updateDataAcceptor();
@@ -48,7 +49,7 @@ public class PeerStream {
 
 	};
 
-    public PeerStream(AsyncTcpSocket socket,
+    public PeerStream(ITcpSocket socket,
 			BinarySerializer<Message> messageSerializer,
 			MemSize initialBufferSize,
 			Duration autoFlushInterval,
@@ -56,14 +57,15 @@ public class PeerStream {
 		this.server = server;
 		this.socket = socket;
 
-		serializer = ChannelSerializer.create(messageSerializer)
+		serializer = ChannelSerializer.builder(messageSerializer)
 				.withInitialBufferSize(initialBufferSize)
 				.withAutoFlushInterval(autoFlushInterval)
-				.withSerializationErrorHandler((message, e) -> listener.onSerializationError(message, e));
-		deserializer = ChannelDeserializer.create(messageSerializer);
+				.withSerializationErrorHandler((message, e) -> listener.onSerializationError(message, e))
+				.build();
+		deserializer = ChannelDeserializer.builder(messageSerializer).build();
 
-        ChannelSupplier.ofSocket(socket).bindTo(deserializer.getInput());
-        serializer.getOutput().set(ChannelConsumer.ofSocket(socket));
+        ChannelSuppliers.ofSocket(socket).bindTo(deserializer.getInput());
+        serializer.getOutput().set(ChannelConsumers.ofSocket(socket));
 
 		deserializer.streamTo(internalConsumer);
 	}

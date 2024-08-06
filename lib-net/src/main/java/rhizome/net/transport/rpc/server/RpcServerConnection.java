@@ -16,6 +16,7 @@ import io.activej.jmx.stats.EventStats;
 import io.activej.jmx.stats.ExceptionStats;
 import io.activej.jmx.stats.ValueStats;
 import io.activej.promise.Promise;
+import io.activej.reactor.nio.NioReactor;
 import io.activej.rpc.protocol.RpcRemoteException;
 import io.activej.rpc.server.RpcRequestHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -42,7 +43,7 @@ public class RpcServerConnection implements ChannelInput, Listener, JmxRefreshab
 	private final EventStats failedRequests = EventStats.create(RpcServer.SMOOTHING_WINDOW);
 	private boolean monitoring = false;
 
-    RpcServerConnection(RpcServer peerServer, 
+    RpcServerConnection(NioReactor reactor, RpcServer peerServer, 
             InetAddress remoteAddress,
             Map<Class<?>, RpcRequestHandler<?,?>> handlers, 
             PeerStream stream) {

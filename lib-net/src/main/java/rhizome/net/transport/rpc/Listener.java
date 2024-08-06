@@ -2,7 +2,7 @@ package rhizome.net.transport.rpc;
 
 import org.jetbrains.annotations.NotNull;
 
-import io.activej.datastream.StreamDataAcceptor;
+import io.activej.datastream.supplier.StreamDataAcceptor;
 import rhizome.net.protocol.Message;
 
 public interface Listener extends StreamDataAcceptor<Message> {

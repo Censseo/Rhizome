@@ -6,63 +6,78 @@
 
 package rhizome.net.transport.rpc.server;
 
-import java.net.InetAddress;
-import java.time.Duration;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.List;
-import java.util.Map;
-
-import org.jetbrains.annotations.NotNull;
-
-import io.activej.codegen.DefiningClassLoader;
 import io.activej.common.MemSize;
+import io.activej.common.exception.MalformedDataException;
+import io.activej.csp.process.frame.FrameFormat;
 import io.activej.datastream.csp.ChannelSerializer;
-import io.activej.eventloop.Eventloop;
-import io.activej.eventloop.net.ServerSocketSettings;
 import io.activej.jmx.api.attribute.JmxAttribute;
 import io.activej.jmx.api.attribute.JmxOperation;
 import io.activej.jmx.api.attribute.JmxReducers.JmxReducerSum;
 import io.activej.jmx.stats.EventStats;
 import io.activej.jmx.stats.ExceptionStats;
 import io.activej.jmx.stats.ValueStats;
-import io.activej.net.AbstractServer;
-import io.activej.net.socket.tcp.AsyncTcpSocket;
-import io.activej.promise.SettablePromise;
-import io.activej.rpc.client.RpcClient;
+import io.activej.net.AbstractReactiveServer;
+import io.activej.net.socket.tcp.ITcpSocket;
+import io.activej.promise.Promise;
+import io.activej.promise.SettableCallback;
+import io.activej.reactor.nio.NioReactor;
+import io.activej.rpc.protocol.RpcControlMessage;
 import io.activej.rpc.server.RpcRequestHandler;
 import io.activej.serializer.BinarySerializer;
-import io.activej.serializer.SerializerBuilder;
-import lombok.Getter;
-import lombok.Setter;
+import io.activej.serializer.SerializerFactory;
 import rhizome.net.protocol.Message;
 import rhizome.net.transport.rpc.PeerStream;
 
+import org.jetbrains.annotations.Nullable;
+
+import java.net.InetAddress;
+import java.time.Duration;
+import java.util.*;
+
 import static io.activej.common.Checks.checkArgument;
 import static io.activej.common.Checks.checkState;
-import static java.util.Arrays.asList;
 
-@Getter
-@Setter
-public class RpcServer extends AbstractServer<RpcServer> {
-    
-	public static final ServerSocketSettings DEFAULT_SERVER_SOCKET_SETTINGS = ServerSocketSettings.create(16384);
+/**
+ * An RPC server that works asynchronously. This server uses fast serializers
+ * and custom optimized communication protocol, improving application
+ * performance.
+ * <p>
+ * In order to set up a server it's mandatory to create it using
+ * {@link #builder(NioReactor)}, indicate a types of messages, and specify
+ * an appropriate {@link RpcRequestHandler request handlers} for that types.
+ * <p>
+ * There are two ways of starting a server:
+ * <ul>
+ * <li>Manually: set up the server and call {@code listen()}</li>
+ * <li>Create a module for your RPC server and pass it to a {@code Launcher}
+ * along with {@code ServiceGraphModule}.</li>
+ * </ul>
+ * <p>
+ * Example. Here are the steps, intended to supplement the example, listed in
+ * {@link RpcClient}:
+ * <ul>
+ * <li>Create a {@code RequestHandler} for {@code RequestClass} and
+ * {@code ResponseClass}</li>
+ * <li>Create an {@code RpcServer}</li>
+ * <li>Run the server</li>
+ * </ul>
+ *
+ * @see RpcRequestHandler
+ * @see RpcClient
+ */
+public final class RpcServer extends AbstractReactiveServer {
 	public static final MemSize DEFAULT_INITIAL_BUFFER_SIZE = ChannelSerializer.DEFAULT_INITIAL_BUFFER_SIZE;
 
-	private Map<Class<?>, RpcRequestHandler<?, ?>> handlers = new LinkedHashMap<>();
-    private List<Class<?>> messageTypes;
+	private MemSize initialBufferSize = DEFAULT_INITIAL_BUFFER_SIZE;
+	private @Nullable FrameFormat frameFormat;
+	private Duration autoFlushInterval = Duration.ZERO;
+
+	private final Map<Class<?>, RpcRequestHandler<?, ?>> handlers = new LinkedHashMap<>();
 
 	private final List<RpcServerConnection> connections = new ArrayList<>();
-
-	private ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-	private SerializerBuilder serializerBuilder = SerializerBuilder.create(DefiningClassLoader.create(classLoader));
     private BinarySerializer<Message> serializer;
 
-    private MemSize initialBufferSize = DEFAULT_INITIAL_BUFFER_SIZE;
-	private Duration autoFlushInterval = Duration.ZERO;
-	private SettablePromise<Void> closeCallback;
+	private SettableCallback<Void> closeCallback;
 
 	// region JMX vars
 	static final Duration SMOOTHING_WINDOW = Duration.ofMinutes(1);
@@ -70,85 +85,145 @@ public class RpcServer extends AbstractServer<RpcServer> {
 	private final Map<InetAddress, EventStats> connectsPerAddress = new HashMap<>();
 	private final EventStats successfulRequests = EventStats.create(SMOOTHING_WINDOW);
 	private final EventStats failedRequests = EventStats.create(SMOOTHING_WINDOW);
-	private final ValueStats requestHandlingTime = ValueStats.create(SMOOTHING_WINDOW).withUnit("milliseconds");
+	private final ValueStats requestHandlingTime = ValueStats.builder(SMOOTHING_WINDOW)
+		.withUnit("milliseconds")
+		.build();
 	private final ExceptionStats lastRequestHandlingException = ExceptionStats.create();
 	private final ExceptionStats lastProtocolError = ExceptionStats.create();
 	private boolean monitoring;
 	// endregion
 
-    // CONSTRUCTOR REGION
-    private RpcServer(Eventloop eventloop) {
-		super(eventloop);
-	}
-    
-	public static RpcServer create(Eventloop eventloop) {
-		return new RpcServer(eventloop)
-                    .withServerSocketSettings(DEFAULT_SERVER_SOCKET_SETTINGS)
-                    .withSocketSettings(DEFAULT_SOCKET_SETTINGS);
+	private RpcServer(NioReactor reactor) {
+		super(reactor);
 	}
 
-	public RpcServer withClassLoader(ClassLoader classLoader) {
-		this.classLoader = classLoader;
-		this.serializerBuilder = SerializerBuilder.create(DefiningClassLoader.create(classLoader));
-		return this;
+	public static Builder builder(NioReactor reactor) {
+		return new RpcServer(reactor).new Builder();
 	}
 
-	/**
-	 * Creates a server, capable of specified message types processing.
-	 * <p>
-	 * <b>Order of message types matters and should match the order of message types set on {@link RpcClient}</b>
-	 *
-	 * @param messageTypes classes of messages processed by a server
-	 * @return server instance capable for handling provided message types
-	 */
-	public RpcServer withMessageTypes(Class<?>... messageTypes) {
-		return withMessageTypes(asList(messageTypes));
+	public final class Builder extends AbstractReactiveServer.Builder<Builder, RpcServer> {
+		private Builder() {
+			handlers.put(RpcControlMessage.class, request -> {
+				if (request == RpcControlMessage.PING) {
+					return Promise.of(RpcControlMessage.PONG);
+				}
+				return Promise.ofException(new MalformedDataException("Unknown message: " + request));
+			});
+		}
+
+		/**
+		 * Sets a default serializer for {@link Message} capable of serializing specified
+		 * message types.
+		 * <p>
+		 * <b>
+		 * All message types should be serializable by a default {@link  SerializerFactory}.
+		 * If some additional configuration should be made to {@link  SerializerFactory}, use
+		 * {@link #withSerializer(BinarySerializer)} method and pass manually constructed
+		 * {@link BinarySerializer<Message>}. You can use implementation of this method as a reference.
+		 * </b>
+		 * <p>
+		 * <b>Order of message types matters. It should match the order of message types set on {@link RpcClient}.
+		 * To keep serializers compatible, the order of message types should not change</b>
+		 *
+		 * @param messageTypes serializer for RPC message
+		 * @return the builder for RPC server with serializer for RPC message capable of serializing
+		 * specified message types
+		 */
+		public Builder withMessageTypes(List<Class<?>> messageTypes) {
+			return withSerializer(SerializerFactory.builder()
+				.withSubclasses(Message.MESSAGE_TYPES, messageTypes)
+				.build()
+				.create(Message.class));
+		}
+
+		/**
+		 * @see #withMessageTypes(List)
+		 */
+		public Builder withMessageTypes(Class<?>... messageTypes) {
+			return withMessageTypes(List.of(messageTypes));
+		}
+
+		/**
+		 * Sets serializer for {@link Message} of this RPC server.
+		 *
+		 * @param serializer serializer for RPC message
+		 * @return the builder for RPC server with specified serializer for RPC message
+		 */
+		public Builder withSerializer(BinarySerializer<Message> serializer) {
+			checkNotBuilt(this);
+			RpcServer.this.serializer = serializer;
+			return this;
+		}
+
+		/**
+		 * Sets a default RPC message packet size.
+		 *
+		 * @param defaultPacketSize default size of the message packet
+		 * @return the builder for RPC server with specified size of the message packet
+		 */
+		public Builder withStreamProtocol(MemSize defaultPacketSize) {
+			checkNotBuilt(this);
+			RpcServer.this.initialBufferSize = defaultPacketSize;
+			return this;
+		}
+
+		/**
+		 * Sets a default RPC message packet size as well as an optional {@link FrameFormat} to be used.
+		 *
+		 * @param defaultPacketSize default size of the message packet
+		 * @param frameFormat       optional message frame format
+		 * @return the builder for RPC server with specified size of the message packet and frame format
+		 */
+		public Builder withStreamProtocol(MemSize defaultPacketSize, @Nullable FrameFormat frameFormat) {
+			checkNotBuilt(this);
+			RpcServer.this.initialBufferSize = defaultPacketSize;
+			RpcServer.this.frameFormat = frameFormat;
+			return this;
+		}
+
+		/**
+		 * Sets an interval for an automatic message flush to the network.
+		 *
+		 * @param autoFlushInterval interval for an automatic message flush
+		 * @return the builder for RPC server with specified interval for an automatic message flush
+		 */
+		@SuppressWarnings("UnusedReturnValue")
+		public Builder withAutoFlushInterval(Duration autoFlushInterval) {
+			checkNotBuilt(this);
+			RpcServer.this.autoFlushInterval = autoFlushInterval;
+			return this;
+		}
+
+		/**
+		 * Adds a handler for a specified request-response pair.
+		 *
+		 * @param requestClass a class of one of request types
+		 * @param handler      a handler that does a request processing and
+		 *                     creates a response
+		 * @param <I>          class of request
+		 * @param <O>          class of response
+		 * @return the builder for RPC server with specified handler of one of request types
+		 */
+		public <I, O> Builder withHandler(Class<I> requestClass, RpcRequestHandler<I, O> handler) {
+			checkNotBuilt(this);
+			checkArgument(!handlers.containsKey(requestClass), "Handler for {} has already been added", requestClass);
+			handlers.put(requestClass, handler);
+			return this;
+		}
+
+		@Override
+		protected RpcServer doBuild() {
+			checkState(handlers.size() > 1, "No RPC handlers added");
+			checkState(serializer != null);
+			return super.doBuild();
+		}
 	}
 
-	/**
-	 * Creates a server, capable of specified message types processing.
-	 * <p>
-	 * <b>Order of message types matters and should match the order of message types set on {@link RpcClient}</b>
-	 *
-	 * @param messageTypes a list of message types processed by a server
-	 * @return server instance capable for handling provided message types
-	 */
-	public RpcServer withMessageTypes(@NotNull List<Class<?>> messageTypes) {
-		checkArgument(new HashSet<>(messageTypes).size() == messageTypes.size(), "Message types must be unique");
-		this.messageTypes = messageTypes;
-		return this;
-	}
-
-	public RpcServer withSerializerBuilder(SerializerBuilder serializerBuilder) {
-		this.serializerBuilder = serializerBuilder;
-		return this;
-	}
-
-    /**
-	 * Adds a handler for a specified request-response pair.
-	 *
-	 * @param requestClass  a class representing a request structure
-	 * @param handler       a class containing logic of request processing and
-	 *                      creating a response
-	 * @param <I>           class of request
-	 * @param <O>           class of response
-	 * @return server instance capable for handling requests of concrete types
-	 */
-	public <I, O> RpcServer withHandler(Class<I> requestClass, RpcRequestHandler<I, O> handler) {
-		checkArgument(!handlers.containsKey(requestClass), "Handler for {} has already been added", requestClass);
-		handlers.put(requestClass, handler);
-		return this;
-	}
-	public RpcServer withHandlers(@NotNull Map<Class<?>, RpcRequestHandler<?, ?>> handlers) {
-		this.handlers = handlers;
-		return this;
-	}
-
-    
 	@Override
-	protected void serve(AsyncTcpSocket socket, InetAddress remoteAddress) {
+	protected void serve(ITcpSocket socket, InetAddress remoteAddress) {
 		var stream = new PeerStream(socket, serializer, initialBufferSize,	autoFlushInterval, true);
-		var connection = new RpcServerConnection(this, remoteAddress, handlers, stream);
+		var connection = new RpcServerConnection(reactor, this, remoteAddress, handlers, stream);
+
 		stream.setListener(connection);
 		add(connection);
 
@@ -158,13 +233,7 @@ public class RpcServer extends AbstractServer<RpcServer> {
 	}
 
 	@Override
-    protected void onListen() {
-        checkState(messageTypes != null, "Message types must be specified");
-		serializer = serializerBuilder.withSubclasses(Message.MESSAGE_TYPES, messageTypes).build(Message.class);
-	}
-
-    @Override
-	protected void onClose(SettablePromise<Void> cb) {
+	protected void onClose(SettableCallback<Void> cb) {
 		if (connections.isEmpty()) {
 			logger.info("RpcServer is closing. Active connections count: 0.");
 			cb.set(null);
@@ -197,8 +266,9 @@ public class RpcServer extends AbstractServer<RpcServer> {
 			logger.info("Client disconnected on {}", connection);
 
 		if (closeCallback != null) {
-			logger.info("RpcServer is closing. One more connection was closed. " +
-					"Active connections count: {}", connections.size());
+			logger.info(
+				"RpcServer is closing. One more connection was closed. Active connections count: {}",
+				connections.size());
 
 			if (connections.isEmpty()) {
 				closeCallback.set(null);
@@ -208,9 +278,10 @@ public class RpcServer extends AbstractServer<RpcServer> {
 	}
 
 	// region JMX
-	@JmxOperation(description = "enable monitoring " +
-			"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, requestHandlingTime stats are collected only when monitoring is enabled) ]")
+	@JmxOperation(description =
+		"enable monitoring " +
+		"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, requestHandlingTime stats are collected only when monitoring is enabled) ]")
 	public void startMonitoring() {
 		monitoring = true;
 		for (RpcServerConnection connection : connections) {
@@ -218,9 +289,10 @@ public class RpcServer extends AbstractServer<RpcServer> {
 		}
 	}
 
-	@JmxOperation(description = "disable monitoring " +
-			"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, requestHandlingTime stats are collected only when monitoring is enabled) ]")
+	@JmxOperation(description =
+		"disable monitoring " +
+		"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, requestHandlingTime stats are collected only when monitoring is enabled) ]")
 	public void stopMonitoring() {
 		monitoring = false;
 		for (RpcServerConnection connection : connections) {
@@ -228,8 +300,9 @@ public class RpcServer extends AbstractServer<RpcServer> {
 		}
 	}
 
-	@JmxAttribute(description = "when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, requestHandlingTime stats are collected only when monitoring is enabled)")
+	@JmxAttribute(description =
+		"when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, requestHandlingTime stats are collected only when monitoring is enabled)")
 	public boolean isMonitoring() {
 		return monitoring;
 	}
@@ -273,15 +346,18 @@ public class RpcServer extends AbstractServer<RpcServer> {
 		return requestHandlingTime;
 	}
 
-	@JmxAttribute(description = "exception that occurred because of business logic error " +
-			"(in RpcRequestHandler implementation)")
+	@JmxAttribute(description =
+		"exception that occurred because of business logic error " +
+		"(in RpcRequestHandler implementation)")
 	public ExceptionStats getLastRequestHandlingException() {
 		return lastRequestHandlingException;
 	}
 
-	@JmxAttribute(description = "exception that occurred because of protocol error " +
-			"(serialization, deserialization, compression, decompression, etc)")
+	@JmxAttribute(description =
+		"exception that occurred because of protocol error " +
+		"(serialization, deserialization, compression, decompression, etc)")
 	public ExceptionStats getLastProtocolError() {
 		return lastProtocolError;
 	}
+	// endregion
 }

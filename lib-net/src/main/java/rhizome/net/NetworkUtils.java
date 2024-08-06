@@ -7,9 +7,11 @@ import java.util.concurrent.ExecutionException;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 
+import io.activej.dns.DnsClient;
 import io.activej.eventloop.Eventloop;
-import io.activej.http.AsyncHttpClient;
+import io.activej.http.HttpClient;
 import io.activej.http.HttpRequest;
+import io.activej.http.HttpUtils;
 import lombok.extern.slf4j.Slf4j;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
@@ -24,8 +26,11 @@ public class NetworkUtils {
             return "http://undiscoverable";
         }
 
-        var eventloop = Eventloop.create();
-        var httpClient = AsyncHttpClient.create(eventloop);
+        var reactor = Eventloop.create();
+
+        var dnsClient = DnsClient.create(reactor, HttpUtils.inetAddress("8.8.8.8"));
+        var httpClient = HttpClient.builder(reactor, dnsClient).build();
+
         String address = "";
         
         if (ip.isEmpty()) {
@@ -40,10 +45,11 @@ public class NetworkUtils {
 
             for (String lookupService : lookupServices) {
                 try {
-                    String rawUrl = eventloop.submit(() ->
-				    httpClient.request(HttpRequest.get(lookupService))
-						.then(response -> response.loadBody())
-						.map(body -> body.getString(UTF_8))).get();
+                    String rawUrl = reactor.submit(() ->
+                        httpClient.request(HttpRequest.get(lookupService).build())
+                            .then(response -> response.loadBody())
+                            .map(body -> body.getString(UTF_8)))
+                            .get();
                     ip = rawUrl.trim();
                     if (isValidIPv4(ip)) {
                         address = "http://" + ip + ":" + port;
@@ -65,7 +71,6 @@ public class NetworkUtils {
     }
 
     public static boolean isValidIPv4(String ip) {
-        // String ipPattern = "^((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$";
         var ipPattern = "^((25[0-5]|2[0-4]\\d|[01]?\\d\\d?)\\.){3}(25[0-5]|2[0-4]\\d|[01]?\\d\\d?)$";
         return ip.matches(ipPattern);
     }

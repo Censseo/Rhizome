@@ -1,9 +1,9 @@
-package rhizome.core.ledger;
+package rhizome.persistence;
 
-import org.iq80.leveldb.DBException;
-
+import rhizome.core.ledger.LedgerException;
+import rhizome.core.ledger.PublicAddress;
 import rhizome.core.transaction.TransactionAmount;
-import rhizome.persistence.leveldb.LevelDBDataStore;
+import rhizome.persistence.rocksdb.RocksDBDataStore;
 
 import static rhizome.core.common.Utils.bytesToLong;
 import static rhizome.core.common.Utils.longToBytes;
@@ -11,7 +11,9 @@ import static rhizome.core.common.Utils.longToBytes;
 import java.io.IOException;
 import java.util.concurrent.atomic.AtomicLong;
 
-public class Ledger extends LevelDBDataStore {
+import org.rocksdb.RocksDBException;
+
+public class Ledger extends RocksDBDataStore {
 
     private static final long HUNDRED_MILLIONS = 100_000_000L * 100L;
 
@@ -33,7 +35,7 @@ public class Ledger extends LevelDBDataStore {
     private void setWalletValue(PublicAddress wallet, TransactionAmount amount) {
         try {
             db().put(wallet.address().asArray(), longToBytes(amount.amount()));
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Failed to set wallet value", e);
         }
     }
@@ -47,19 +49,24 @@ public class Ledger extends LevelDBDataStore {
     }
 
     private TransactionAmount getWalletValueInternal(PublicAddress wallet) {
-        byte[] value = db().get(wallet.address().asArray());
-        if (value == null) {
+        try {
+            byte[] value = db().get(wallet.address().asArray());
+            if (value == null) {
+                return null;
+            }
+            long amount = bytesToLong(value);
+
+            // set overflow values to 0
+            if (amount > HUNDRED_MILLIONS) {
+                return new TransactionAmount(0);
+            }
+            return new TransactionAmount(amount);
+        } catch (RocksDBException e) {
+            e.printStackTrace();
             return null;
         }
-        long amount = bytesToLong(value);
-
-        // set overflow values to 0
-        if (amount > HUNDRED_MILLIONS) {
-            return new TransactionAmount(0);
-        }
-        return new TransactionAmount(amount);
     }
-
+    
     public void withdraw(PublicAddress wallet, TransactionAmount amt) {
         TransactionAmount currentAmount = getWalletValue(wallet);
         long newValue = currentAmount.amount() - amt.amount();

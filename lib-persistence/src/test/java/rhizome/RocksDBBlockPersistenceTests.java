@@ -9,6 +9,7 @@ import java.math.BigInteger;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.rocksdb.RocksDBException;
 
 import rhizome.core.block.Block;
 import rhizome.core.block.BlockImpl;
@@ -16,24 +17,24 @@ import rhizome.core.common.Constants;
 import rhizome.core.transaction.Transaction;
 import rhizome.core.transaction.TransactionImpl;
 import rhizome.core.user.User;
-import rhizome.persistence.leveldb.LevelDBBlockPersistence;
+import rhizome.persistence.rocksdb.RocksDBBlockPersistence;
 
-class LevelDBBlockPersistenceTests {
+class RocksDBBlockPersistenceTests {
 
     private static final String TEST_DB_PATH = "./test-data/tmpdb";
-    private LevelDBBlockPersistence blocks;
+    private RocksDBBlockPersistence blocks;
     private User miner;
     private User receiver;
 
     @BeforeEach
     void setUp() throws IOException {
-        blocks = new LevelDBBlockPersistence(TEST_DB_PATH);
+        blocks = new RocksDBBlockPersistence(TEST_DB_PATH);
         miner = User.create();
         receiver = User.create();
     }
 
     @AfterEach
-    void tearDown() throws IOException {
+    void tearDown() throws RocksDBException, IOException {
         blocks.deleteDB();
     }
 

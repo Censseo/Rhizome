@@ -1,18 +1,19 @@
 package rhizome.persistence;
 
-import org.iq80.leveldb.*;
 import rhizome.core.transaction.Transaction;
-import rhizome.persistence.leveldb.LevelDBDataStore;
+import rhizome.persistence.rocksdb.RocksDBDataStore;
 import rhizome.core.crypto.SHA256Hash;
 import rhizome.core.ledger.LedgerException;
 
 import java.nio.ByteBuffer;
+
+import org.rocksdb.RocksDBException;
+
 import java.io.IOException;
 
+public class TransactionPersistence extends RocksDBDataStore {
 
-public class TransactionStore extends LevelDBDataStore {
-
-    public TransactionStore(String path) throws IOException {
+    public TransactionPersistence(String path) throws IOException {
         super.init(path);
     }
 
@@ -22,7 +23,7 @@ public class TransactionStore extends LevelDBDataStore {
         try {
             byte[] value = db().get(key);
             return value != null;
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Failed to check transaction existence", e);
         }
     }
@@ -37,7 +38,7 @@ public class TransactionStore extends LevelDBDataStore {
             }
             ByteBuffer buffer = ByteBuffer.wrap(value);
             return buffer.getInt();
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Could not find block for specified transaction", e);
         }
     }
@@ -51,7 +52,7 @@ public class TransactionStore extends LevelDBDataStore {
             }
             ByteBuffer buffer = ByteBuffer.wrap(value);
             return buffer.getInt();
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Could not find block for specified transaction ID", e);
         }
     }
@@ -63,7 +64,7 @@ public class TransactionStore extends LevelDBDataStore {
         buffer.putInt(blockId);
         try {
             db().put(key, buffer.array());
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Could not write transaction to DB", e);
         }
     }
@@ -73,7 +74,7 @@ public class TransactionStore extends LevelDBDataStore {
         byte[] key = txHash.toBytes();
         try {
             db().delete(key);
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             throw new LedgerException("Could not remove transaction from DB", e);
         }
     }

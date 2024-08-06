@@ -9,8 +9,7 @@ dependencies {
     implementation 'com.github.npgall:cqengine:3.6.0'
     // implementation 'com.googlecode.cqengine:cqengine:3.6.0'
 
-    // https://mvnrepository.com/artifact/org.iq80.leveldb/leveldb
-    implementation 'org.iq80.leveldb:leveldb:0.12'
+    implementation 'org.rocksdb:rocksdbjni:9.4.0'
 
     // https://mvnrepository.com/artifact/commons-io/commons-io
     implementation 'commons-io:commons-io:2.15.0'

@@ -1,13 +1,9 @@
-package rhizome.persistence.leveldb;
-
-import org.iq80.leveldb.DBException;
-import org.iq80.leveldb.DBIterator;
-import org.iq80.leveldb.ReadOptions;
-import org.iq80.leveldb.WriteOptions;
+package rhizome.persistence.rocksdb;
 
 import io.activej.bytebuf.ByteBuf;
 import io.activej.bytebuf.ByteBufPool;
 import io.activej.common.MemSize;
+import lombok.extern.slf4j.Slf4j;
 import rhizome.core.block.Block;
 import rhizome.core.block.dto.BlockDto;
 import rhizome.core.crypto.SHA256Hash;
@@ -23,12 +19,17 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 
-public class LevelDBBlockPersistence extends LevelDBDataStore implements BlockPersistence {
+import org.rocksdb.ReadOptions;
+import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
+
+@Slf4j
+public class RocksDBBlockPersistence extends RocksDBDataStore implements BlockPersistence {
 
     static final String BLOCK_COUNT_KEY = "BLOCK_COUNT";
     static final String TOTAL_WORK_KEY = "TOTAL_WORK";
 
-    public LevelDBBlockPersistence(String path) throws IOException {
+    public RocksDBBlockPersistence(String path) throws IOException {
         super.init(path);
     }
 
@@ -63,11 +64,17 @@ public class LevelDBBlockPersistence extends LevelDBDataStore implements BlockPe
         return (ByteBuf) get(blockId, ByteBuf.class);
     }
 
+
     public List<TransactionDto> getBlockTransactions(BlockDto block) {
         var transactions = new ArrayList<TransactionDto>();
-        for (int i = 0; i < block.numTransactions(); i++) {            
-            var value = (byte[]) get(composeKey(block.id(), i), byte[].class);
-            transactions.add(BinarySerializable.fromBuffer(value, TransactionDto.class));
+        try {
+            for (int i = 0; i < block.numTransactions(); i++) {
+                var value = (byte[]) get(composeKey(block.id(), i), byte[].class);
+                transactions.add(BinarySerializable.fromBuffer(value, TransactionDto.class));
+            }
+        } catch (RocksDBException e) {
+            log.error("Error getting block transactions", e);
+            transactions.clear();
         }
         return transactions;
     }
@@ -110,22 +117,20 @@ public class LevelDBBlockPersistence extends LevelDBDataStore implements BlockPe
 
     // NOTE: seek method looks like bugged as it return everything wi
     public List<SHA256Hash> getTransactionsForWallet(PublicAddress wallet) {
-        var address = wallet.toBytes();
+        byte[] address = wallet.toBytes();
         List<SHA256Hash> transactions = new ArrayList<>();
 
-        try (DBIterator iterator = db().iterator(new ReadOptions())) {
-            for(iterator.seek(address); iterator.hasNext(); iterator.next()) {
-                byte[] key = iterator.peekNext().getKey();
-                byte[] addressKey = Arrays.copyOfRange(key, 0, 25);
+        try (RocksIterator iterator = db().newIterator(new ReadOptions())) {
+            for (iterator.seek(address); iterator.isValid(); iterator.next()) {
+                byte[] key = iterator.key();
+                byte[] addressKey = Arrays.copyOfRange(key, 0, address.length);
                 if (!Arrays.equals(addressKey, address)) {
-                    continue;
+                    break;
                 }
-                byte[] txidBytes = Arrays.copyOfRange(key, 25, 57);
+                byte[] txidBytes = Arrays.copyOfRange(key, address.length, key.length);
                 SHA256Hash txid = SHA256Hash.of(txidBytes);
                 transactions.add(txid);
             }
-        } catch (IOException e) {
-            throw new LevelDBException("Failed to iterate over the database", e);
         }
         
         return transactions;
@@ -138,22 +143,16 @@ public class LevelDBBlockPersistence extends LevelDBDataStore implements BlockPe
             var w1Key = new WalletTransactionKey(t.from(), txid, false);
             var w2Key = new WalletTransactionKey(t.to(), txid, false);
             
-            try {
                 deleteTransaction(w1Key);
                 deleteTransaction(w2Key);
-            } catch (DBException e) {
-                throw new LevelDBException("Could not remove transaction from wallet in blockstore db: " + e.getMessage(), e);
-            }
-        }
+        }            
     }
 
-    private void deleteTransaction(WalletTransactionKey key) throws DBException {
-        WriteOptions writeOptions = new WriteOptions().sync(true);
-        db().delete(key.toByteArray(), writeOptions);
+    private void deleteTransaction(WalletTransactionKey key) {
+        delete(key.toByteArray());
     }
 
-
-    public void addBlock(Block block) throws LevelDBException {
+    public void addBlock(Block block) {
         set(block.id(), block.serialize().toBuffer());
 
         for (int i = 0; i < block.transactions().size(); i++) {

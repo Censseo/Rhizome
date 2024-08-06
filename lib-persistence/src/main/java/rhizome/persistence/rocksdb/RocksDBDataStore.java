@@ -1,11 +1,4 @@
-package rhizome.persistence.leveldb;
-
-import org.apache.commons.io.FileUtils;
-import org.iq80.leveldb.DB;
-import org.iq80.leveldb.DBException;
-import org.iq80.leveldb.Options;
-import org.iq80.leveldb.ReadOptions;
-import org.iq80.leveldb.WriteOptions;
+package rhizome.persistence.rocksdb;
 
 import io.activej.bytebuf.ByteBuf;
 import io.activej.bytebuf.ByteBufPool;
@@ -14,66 +7,76 @@ import lombok.Getter;
 import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 
-import org.iq80.leveldb.DBIterator;
+import org.apache.commons.io.FileUtils;
+import org.rocksdb.Options;
+import org.rocksdb.RocksDB;
+import org.rocksdb.RocksDBException;
+import org.rocksdb.RocksIterator;
+import org.rocksdb.WriteOptions;
 
 import java.io.File;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.nio.ByteBuffer;
 
-import static org.iq80.leveldb.impl.Iq80DBFactory.factory;
 import static java.nio.charset.StandardCharsets.UTF_8;
 
 @Getter @Setter @Slf4j
-public class LevelDBDataStore {
-    private DB db;
+public class RocksDBDataStore {
+    private RocksDB db;
     private String path;
 
-    public LevelDBDataStore() {
+    public RocksDBDataStore() {
         this.db = null;
         this.path = "";
     }
 
-    public void init(String path) throws IOException {
+    public void init(String path) {
+
+        RocksDB.loadLibrary();
+
         if (this.db != null) {
             this.closeDB();
         }
+
         this.path = path;
         Options options = new Options();
-        options.createIfMissing(true);
-        this.db = factory.open(new File(path), options);
+        options.setCreateIfMissing(true);
+        try {
+            this.db = RocksDB.open(options, path);
+        } catch (RocksDBException e) {
+            log.error("Error opening RocksDB", e);
+        }
     }
 
-    public void deleteDB() throws IOException {
+    public void deleteDB() throws IOException, RocksDBException {
         this.closeDB();
-        factory.destroy(new File(path), new Options());
+        RocksDB.destroyDB(path, new Options());
+        
         File directory = new File(path);
         try {
             FileUtils.deleteDirectory(directory);
         } catch (IOException e) {
-            throw new LevelDBException("Could not clear path " + path, e);
+            throw new RocksDBException("Could not clear path " + path);
         }
     }
 
     public void closeDB() {
         if (this.db != null) {
-            try {
-                this.db.close();
-            } catch (IOException e) {
-                throw new LevelDBException("Could not close DataStore db", e);
-            }
+            this.db.close();
             this.db = null;
         }
     }
 
-    public void clear() {
-        try (DBIterator iterator = db.iterator()) {
-            for (iterator.seekToFirst(); iterator.hasNext(); iterator.next()) {
-                String key = new String(iterator.peekNext().getKey(), UTF_8);
-                db.delete(key.getBytes(UTF_8));
+    public void clear() throws RocksDBException {
+    RocksIterator iterator = db.newIterator();
+        try {
+            for (iterator.seekToFirst(); iterator.isValid(); iterator.next()) {
+                byte[] key = iterator.key();
+                db.delete(key);
             }
-        } catch (IOException e) {
-            throw new LevelDBException("Could not clear data store", e);
+        } finally {
+            iterator.close();
         }
     }
 
@@ -100,22 +103,51 @@ public class LevelDBDataStore {
         keyByte.writeInt(key);
         set(keyByte.asArray(), value);
     }
+
     protected void set(byte[] key, byte[] value) {
-        db.put(key, value, new WriteOptions().sync(true));
+        try (WriteOptions writeOptions = new WriteOptions().setSync(true)) {
+            db.put(writeOptions, key, value);
+        } catch (RocksDBException e) {
+            log.error("Error setting key", e);
+        }
+    }
+
+    protected void delete(byte[] key) {
+        try (WriteOptions writeOptions = new WriteOptions().setSync(true)) {
+            db.delete(writeOptions, key);
+        } catch (RocksDBException e) {
+            log.error("Error deleting transaction", e);
+        }
     }
 
     protected Object get(String key, Class<?> type) {
-        return get(key.getBytes(UTF_8), type);
+        try {
+            return get(key.getBytes(UTF_8), type);
+        } catch (RocksDBException e) {
+            log.error(key, e);
+        }
+        return null;
     }
     protected Object get(int key, Class<?> type) {
         var keyByte = ByteBufPool.allocate(Integer.BYTES);
         keyByte.writeInt(key);
-        return get(keyByte.asArray(), type);
+        try {
+            return get(keyByte.asArray(), type);
+        } catch (RocksDBException e) {
+            log.error(keyByte.toString(), e);
+        }
+        return null;
     }
-    protected Object get(byte[] key, Class<?> type) {
-        var value = db.get(key, new ReadOptions());
+    protected Object get(byte[] key, Class<?> type) throws RocksDBException {
+        byte[] value;
+        try {
+            value = db.get(key);
+        } catch (RocksDBException e) {
+            value = null;
+        }
+        
         if (value == null) {
-            throw new LevelDBException("Empty key: " + key);
+            throw new RocksDBException("Empty key: " + key);
         }
 
         if(type == String.class) {
@@ -133,19 +165,19 @@ public class LevelDBDataStore {
             buff.put(value);
 
             if (!buff.canRead()) {
-                throw new LevelDBException("Could not read value of record " + key + " from BlockStore db.");
+                throw new RocksDBException("Could not read value of record " + key + " from BlockStore db.");
             }
 
             return buff;
         } else {
-            throw new LevelDBException("Unsupported type");
+            throw new RocksDBException("Unsupported type");
         }
     }
 
     protected boolean hasKey(String key) {
         try {
-            return db.get(key.getBytes(UTF_8), new ReadOptions()) != null;
-        } catch (DBException e) {
+            return db.get(key.getBytes(UTF_8)) != null;
+        } catch (RocksDBException e) {
             log.error("Error checking key", e);
             return false;
         }
@@ -156,7 +188,7 @@ public class LevelDBDataStore {
             var keyByte = ByteBufPool.allocate(Integer.BYTES);
             keyByte.writeInt(key);
             return db.get(keyByte.asArray()) != null;
-        } catch (DBException e) {
+        } catch (RocksDBException e) {
             log.error("Error checking key", e);
             return false;
         }

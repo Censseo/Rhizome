@@ -1,5 +1,7 @@
 package rhizome.net.transport.rpc.server;
 
+import static org.junit.jupiter.api.DynamicTest.stream;
+
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
@@ -9,13 +11,15 @@ import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import io.activej.common.exception.MalformedDataException;
-import io.activej.datastream.StreamDataAcceptor;
+import io.activej.datastream.supplier.StreamDataAcceptor;
 import io.activej.jmx.api.JmxRefreshable;
 import io.activej.jmx.api.attribute.JmxAttribute;
 import io.activej.jmx.stats.EventStats;
 import io.activej.jmx.stats.ExceptionStats;
 import io.activej.jmx.stats.ValueStats;
 import io.activej.promise.Promise;
+import io.activej.reactor.AbstractReactive;
+import io.activej.reactor.Reactor;
 import io.activej.reactor.nio.NioReactor;
 import io.activej.rpc.protocol.RpcRemoteException;
 import io.activej.rpc.server.RpcRequestHandler;
@@ -27,7 +31,7 @@ import rhizome.net.transport.rpc.Listener;
 import rhizome.net.transport.rpc.PeerStream;
 
 @Slf4j
-public class RpcServerConnection implements ChannelInput, Listener, JmxRefreshable {
+public class RpcServerConnection extends AbstractReactive implements ChannelInput, Listener, JmxRefreshable {
 
     private StreamDataAcceptor<Message> downstreamDataAcceptor;
 	private final RpcServer rpcServer;
@@ -38,15 +42,18 @@ public class RpcServerConnection implements ChannelInput, Listener, JmxRefreshab
     // jmx
 	private final InetAddress remoteAddress;
 	private final ExceptionStats lastRequestHandlingException = ExceptionStats.create();
-	private final ValueStats requestHandlingTime = ValueStats.create(RpcServer.SMOOTHING_WINDOW).withUnit("milliseconds");
+	private final ValueStats requestHandlingTime = ValueStats.builder(RpcServer.SMOOTHING_WINDOW).withUnit("milliseconds").build();
 	private final EventStats successfulRequests = EventStats.create(RpcServer.SMOOTHING_WINDOW);
 	private final EventStats failedRequests = EventStats.create(RpcServer.SMOOTHING_WINDOW);
 	private boolean monitoring = false;
 
-    RpcServerConnection(NioReactor reactor, RpcServer peerServer, 
-            InetAddress remoteAddress,
-            Map<Class<?>, RpcRequestHandler<?,?>> handlers, 
-            PeerStream stream) {
+    RpcServerConnection(
+		Reactor reactor, 
+		RpcServer peerServer, 
+		InetAddress remoteAddress,
+		Map<Class<?>, RpcRequestHandler<?,?>> handlers, 
+		PeerStream stream) {
+		super(reactor);
         this.rpcServer = peerServer;
         this.handlers = handlers;
         this.stream = stream;
@@ -73,7 +80,7 @@ public class RpcServerConnection implements ChannelInput, Listener, JmxRefreshab
 		if (requestHandler == null) {
 			return Promise.ofException(new MalformedDataException("Failed to process request " + request));
 		}
-		return requestHandler.run(request).promise();
+		return requestHandler.run(request);
 	}
 
     @Override

@@ -1,9 +1,9 @@
-package rhizome.persistence;
+package rhizome.persistence.rocksdb;
 
 import rhizome.core.ledger.LedgerException;
 import rhizome.core.ledger.PublicAddress;
 import rhizome.core.transaction.TransactionAmount;
-import rhizome.persistence.rocksdb.RocksDBDataStore;
+import rhizome.persistence.LedgerPersistence;
 
 import static rhizome.core.common.Utils.bytesToLong;
 import static rhizome.core.common.Utils.longToBytes;
@@ -13,18 +13,20 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import org.rocksdb.RocksDBException;
 
-public class Ledger extends RocksDBDataStore {
+public class RocksDBLedgerPersistence extends RocksDBDataStore implements LedgerPersistence {
 
     private static final long HUNDRED_MILLIONS = 100_000_000L * 100L;
 
-    public Ledger(String path) throws IOException {
+    public RocksDBLedgerPersistence(String path) throws IOException {
         super.init(path);
     }
 
+    @Override
     public boolean hasWallet(PublicAddress wallet) {
         return getWalletValueInternal(wallet) != null;
     }
 
+    @Override
     public void createWallet(PublicAddress wallet) {
         if (this.hasWallet(wallet)) {
             throw new LedgerException("Wallet already exists");
@@ -40,6 +42,7 @@ public class Ledger extends RocksDBDataStore {
         }
     }
 
+    @Override
     public TransactionAmount getWalletValue(PublicAddress wallet) {
         TransactionAmount amount = getWalletValueInternal(wallet);
         if (amount == null) {
@@ -67,6 +70,7 @@ public class Ledger extends RocksDBDataStore {
         }
     }
     
+    @Override
     public void withdraw(PublicAddress wallet, TransactionAmount amt) {
         TransactionAmount currentAmount = getWalletValue(wallet);
         long newValue = currentAmount.amount() - amt.amount();
@@ -76,14 +80,17 @@ public class Ledger extends RocksDBDataStore {
         this.setWalletValue(wallet, new TransactionAmount(newValue));
     }
 
+    @Override
     public void revertSend(PublicAddress wallet, TransactionAmount amt) {
         adjustWalletBalance(wallet, amt.amount(), true);
     }
 
+    @Override
     public void deposit(PublicAddress wallet, TransactionAmount amt) {
         adjustWalletBalance(wallet, amt.amount(), true);
     }
 
+    @Override
     public void revertDeposit(PublicAddress wallet, TransactionAmount amt) {
         adjustWalletBalance(wallet, -amt.amount(), false);
     }

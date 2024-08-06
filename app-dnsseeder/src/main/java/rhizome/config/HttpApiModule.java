@@ -19,13 +19,13 @@ import static io.activej.http.HttpMethod.*;
 import static java.util.concurrent.Executors.newSingleThreadExecutor;
 
 @Slf4j
-public class Api extends AbstractModule {
+public class HttpApiModule extends AbstractModule {
 
     private static final String RESOURCE_DIR = "static/query";
     private static final int PORT = 8080;
 
-    public static Api create() {
-        return new Api();
+    public static HttpApiModule create() {
+        return new HttpApiModule();
     }
 
 	@Provides

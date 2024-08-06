@@ -13,7 +13,6 @@ import rhizome.core.transaction.Transaction;
 import rhizome.core.transaction.dto.TransactionDto;
 import rhizome.persistence.BlockPersistence;
 
-import java.io.IOException;
 import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -29,7 +28,7 @@ public class RocksDBBlockPersistence extends RocksDBDataStore implements BlockPe
     static final String BLOCK_COUNT_KEY = "BLOCK_COUNT";
     static final String TOTAL_WORK_KEY = "TOTAL_WORK";
 
-    public RocksDBBlockPersistence(String path) throws IOException {
+    public RocksDBBlockPersistence(String path) {
         super.init(path);
     }
 

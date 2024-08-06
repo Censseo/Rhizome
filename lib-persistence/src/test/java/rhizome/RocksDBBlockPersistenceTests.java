@@ -21,7 +21,7 @@ import rhizome.persistence.rocksdb.RocksDBBlockPersistence;
 
 class RocksDBBlockPersistenceTests {
 
-    private static final String TEST_DB_PATH = "./test-data/tmpdb";
+    private static final String TEST_DB_PATH = "./tmpdb";
     private RocksDBBlockPersistence blocks;
     private User miner;
     private User receiver;

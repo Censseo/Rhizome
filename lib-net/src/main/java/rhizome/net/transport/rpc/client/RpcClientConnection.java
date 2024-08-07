@@ -111,7 +111,7 @@ public final class RpcClientConnection extends AbstractReactive implements Chann
 			if (timeout == Integer.MAX_VALUE) {
 				activeRequests.put(index, cb);
 			} else {
-				ScheduledCallback<O> scheduledRunnable = new ScheduledCallback<>(reactor.currentTimeMillis() + timeout, cookie, cb);
+				ScheduledCallback<O> scheduledRunnable = new ScheduledCallback<>(reactor.currentTimeMillis() + timeout, index, cb);
 				reactor.scheduleBackground(scheduledRunnable);
 				activeRequests.put(index, scheduledRunnable);
 			}
@@ -237,7 +237,7 @@ public final class RpcClientConnection extends AbstractReactive implements Chann
 
 	private void processControlMessage(RpcControlMessage controlMessage) {
 		if (controlMessage == RpcControlMessage.CLOSE) {
-			rpcClient.removeConnection(address);
+			rpcClient.onClosedConnection(address);
 			serverClosing = true;
 			if (activeRequests.size() == 0) {
 				shutdown();

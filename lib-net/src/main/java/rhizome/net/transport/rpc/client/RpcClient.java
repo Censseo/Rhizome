@@ -7,44 +7,45 @@ package rhizome.net.transport.rpc.client;
 
 import io.activej.async.callback.Callback;
 import io.activej.async.exception.AsyncTimeoutException;
-import io.activej.async.service.EventloopService;
-import io.activej.codegen.DefiningClassLoader;
+import io.activej.async.service.ReactiveService;
 import io.activej.common.ApplicationSettings;
 import io.activej.common.Checks;
 import io.activej.common.MemSize;
-import io.activej.common.initializer.WithInitializer;
-import io.activej.csp.process.frames.FrameFormat;
+import io.activej.common.builder.AbstractBuilder;
+import io.activej.csp.process.frame.FrameFormat;
 import io.activej.datastream.csp.ChannelSerializer;
 import io.activej.eventloop.Eventloop;
-import io.activej.eventloop.jmx.EventloopJmxBeanWithStats;
-import io.activej.eventloop.net.SocketSettings;
 import io.activej.jmx.api.attribute.JmxAttribute;
 import io.activej.jmx.api.attribute.JmxOperation;
 import io.activej.jmx.api.attribute.JmxReducers.JmxReducerSum;
 import io.activej.jmx.stats.ExceptionStats;
-import io.activej.net.socket.tcp.AsyncTcpSocket;
-import io.activej.net.socket.tcp.AsyncTcpSocketNio;
-import io.activej.net.socket.tcp.AsyncTcpSocketNio.JmxInspector;
+import io.activej.net.socket.tcp.ITcpSocket;
+import io.activej.net.socket.tcp.TcpSocket;
+import io.activej.net.socket.tcp.TcpSocket.JmxInspector;
 import io.activej.promise.Promise;
-import io.activej.promise.Promises;
 import io.activej.promise.SettablePromise;
+import io.activej.reactor.AbstractNioReactive;
+import io.activej.reactor.Reactor;
+import io.activej.reactor.jmx.ReactiveJmxBeanWithStats;
+import io.activej.reactor.net.SocketSettings;
+import io.activej.reactor.nio.NioReactor;
 import io.activej.rpc.client.IRpcClient;
 import io.activej.rpc.client.RpcClientConnectionPool;
 import io.activej.rpc.client.jmx.RpcConnectStats;
 import io.activej.rpc.client.jmx.RpcRequestStats;
-import io.activej.rpc.client.sender.DiscoveryService;
 import io.activej.rpc.client.sender.RpcSender;
-import io.activej.rpc.client.sender.RpcStrategies;
-import io.activej.rpc.client.sender.RpcStrategy;
+import io.activej.rpc.client.sender.strategy.RpcStrategies;
+import io.activej.rpc.client.sender.strategy.RpcStrategy;
 import io.activej.rpc.protocol.RpcException;
+import io.activej.rpc.protocol.RpcMessage;
+import io.activej.rpc.server.RpcServer;
 import io.activej.serializer.BinarySerializer;
-import io.activej.serializer.SerializerBuilder;
+import io.activej.serializer.SerializerFactory;
+import org.jetbrains.annotations.Nullable;
 import rhizome.net.protocol.Message;
 import rhizome.net.transport.rpc.PeerStream;
 
 import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-import org.jetbrains.annotations.VisibleForTesting;
 import org.slf4j.Logger;
 
 import javax.net.ssl.SSLContext;
@@ -53,9 +54,12 @@ import java.time.Duration;
 import java.util.*;
 import java.util.concurrent.Executor;
 
+import static io.activej.common.Checks.checkState;
 import static io.activej.common.Utils.nonNullElseGet;
-import static io.activej.net.socket.tcp.AsyncTcpSocketSsl.wrapClientSocket;
-import static java.util.Collections.emptyMap;
+import static io.activej.common.Utils.not;
+import static io.activej.net.socket.tcp.SslTcpSocket.wrapClientSocket;
+import static io.activej.reactor.Reactive.checkInReactorThread;
+import static io.activej.reactor.Reactor.checkInReactorThread;
 import static java.util.stream.Collectors.toList;
 import static org.slf4j.LoggerFactory.getLogger;
 
@@ -76,46 +80,46 @@ import static org.slf4j.LoggerFactory.getLogger;
  * @see RpcStrategies
  * @see RpcServer
  */
-public final class RpcClient implements IRpcClient, EventloopService, WithInitializer<RpcClient>, EventloopJmxBeanWithStats {
-	private static final boolean CHECK = Checks.isEnabled(RpcClient.class);
+public final class RpcClient extends AbstractNioReactive
+	implements IRpcClient, ReactiveService, ReactiveJmxBeanWithStats {
+	private static final boolean CHECKS = Checks.isEnabled(RpcClient.class);
 
-	public static final SocketSettings DEFAULT_SOCKET_SETTINGS = SocketSettings.createDefault();
 	public static final Duration DEFAULT_CONNECT_TIMEOUT = ApplicationSettings.getDuration(RpcClient.class, "connectTimeout", Duration.ZERO);
 	public static final Duration DEFAULT_RECONNECT_INTERVAL = ApplicationSettings.getDuration(RpcClient.class, "reconnectInterval", Duration.ZERO);
 	public static final MemSize DEFAULT_PACKET_SIZE = ApplicationSettings.getMemSize(RpcClient.class, "packetSize", ChannelSerializer.DEFAULT_INITIAL_BUFFER_SIZE);
 
-	private static final RpcException START_EXCEPTION = new RpcException("Could not establish initial connection");
+	private static final RpcException SET_STRATEGY_EXCEPTION = new RpcException("Could not change strategy");
 	private static final RpcException NO_SENDER_AVAILABLE_EXCEPTION = new RpcException("No senders available");
+	private static final RpcException CLIENT_IS_STOPPED = new RpcException("Client is stopped");
 
 	private Logger logger = getLogger(getClass());
 
-	private final Eventloop eventloop;
-	private SocketSettings socketSettings = DEFAULT_SOCKET_SETTINGS;
+	private SocketSettings socketSettings = SocketSettings.defaultInstance();
 
 	// SSL
 	private SSLContext sslContext;
 	private Executor sslExecutor;
 
-	private RpcStrategy strategy = new NoServersStrategy();
-	private List<InetSocketAddress> addresses = new ArrayList<>();
+	private RpcStrategy strategy = new NoServersRpcStrategy();
+	private final Set<InetSocketAddress> pendingConnections = new HashSet<>();
 	private final Map<InetSocketAddress, RpcClientConnection> connections = new HashMap<>();
-	private Map<Object, InetSocketAddress> previouslyDiscovered;
+
+	private RpcStrategy newStrategy = strategy;
+	private boolean newStrategyRetry;
+	private SettablePromise<Void> newStrategyPromise;
+	private final Set<InetSocketAddress> newConnections = new HashSet<>();
 
 	private MemSize defaultPacketSize = DEFAULT_PACKET_SIZE;
 	private @Nullable FrameFormat frameFormat;
 	private Duration autoFlushInterval = Duration.ZERO;
 	private Duration keepAliveInterval = Duration.ZERO;
 
-	private List<Class<?>> messageTypes;
 	private long connectTimeoutMillis = DEFAULT_CONNECT_TIMEOUT.toMillis();
 	private long reconnectIntervalMillis = DEFAULT_RECONNECT_INTERVAL.toMillis();
 
-	private boolean forcedStart;
-	private boolean forcedShutdown;
-
-	private ClassLoader classLoader = Thread.currentThread().getContextClassLoader();
-	private SerializerBuilder serializerBuilder = SerializerBuilder.create(DefiningClassLoader.create(classLoader));
 	private BinarySerializer<Message> serializer;
+
+	private boolean forcedShutdown;
 
 	private RpcSender requestSender = new NoSenderAvailable();
 
@@ -133,287 +137,408 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 
 	private final JmxInspector statsSocket = new JmxInspector();
 
-	// region builders
-	private RpcClient(Eventloop eventloop) {
-		this.eventloop = eventloop;
+	private RpcClient(NioReactor reactor) {
+		super(reactor);
 	}
 
 	public static RpcClient create(Eventloop eventloop) {
 		return new RpcClient(eventloop);
 	}
 
-	public RpcClient withClassLoader(ClassLoader classLoader) {
-		this.classLoader = classLoader;
-		this.serializerBuilder = SerializerBuilder.create(DefiningClassLoader.create(classLoader));
-		return this;
+	public static Builder builder(NioReactor reactor) {
+		return new RpcClient(reactor).new Builder();
 	}
 
-	/**
-	 * Creates a client that uses provided socket settings.
-	 *
-	 * @param socketSettings settings for socket
-	 * @return the RPC client with specified socket settings
-	 */
-	public RpcClient withSocketSettings(SocketSettings socketSettings) {
-		this.socketSettings = socketSettings;
-		return this;
-	}
+	public final class Builder extends AbstractBuilder<Builder, RpcClient> {
+		private Builder() {}
 
-	/**
-	 * Creates a client with capability of specified message types processing.
-	 * <p>
-	 * <b>Order of message types matters and should match the order of message types set on {@link RpcServer}</b>
-	 *
-	 * @param messageTypes classes of messages processed by a server
-	 * @return client instance capable for handling provided message types
-	 */
-	public RpcClient withMessageTypes(Class<?>... messageTypes) {
-		return withMessageTypes(Arrays.asList(messageTypes));
-	}
+		/**
+		 * Sets a default serializer for {@link RpcMessage} capable of serializing specified
+		 * message types.
+		 * <p>
+		 * <b>
+		 * All message types should be serializable by a default {@link  SerializerFactory}.
+		 * If some additional configuration should be made to {@link  SerializerFactory}, use
+		 * {@link #withSerializer(BinarySerializer)} method and pass manually constructed
+		 * {@link BinarySerializer<Message>}. You can use implementation of this method as a reference.
+		 * </b>
+		 * <p>
+		 * <b>Order of message types matters. It should match the order of message types set on {@link RpcServer}.
+		 * To keep serializers compatible, the order of message types should not change</b>
+		 *
+		 * @param messageTypes serializer for RPC message
+		 * @return the builder for RPC client with serializer for RPC message capable of serializing
+		 * specified message types
+		 */
+		public Builder withMessageTypes(List<Class<?>> messageTypes) {
+			return withSerializer(SerializerFactory.builder()
+				.withSubclasses(Message.MESSAGE_TYPES, messageTypes)
+				.build()
+				.create(Message.class));
+		}
 
-	/**
-	 * Creates a client with capability of specified message types processing.
-	 * <p>
-	 * <b>Order of message types matters and should match the order of message types set on {@link RpcServer}</b>
-	 *
-	 * @param messageTypes classes of messages processed by a server
-	 * @return client instance capable for handling provided
-	 * message types
-	 */
-	public RpcClient withMessageTypes(List<Class<?>> messageTypes) {
-		Checks.checkArgument(new HashSet<>(messageTypes).size() == messageTypes.size(), "Message types must be unique");
-		this.messageTypes = messageTypes;
-		return this;
-	}
+		/**
+		 * @see #withMessageTypes(List)
+		 */
+		public Builder withMessageTypes(Class<?>... messageTypes) {
+			return withMessageTypes(List.of(messageTypes));
+		}
 
-	/**
-	 * Creates a client with serializer builder. A serializer builder is used
-	 * for creating fast serializers at runtime.
-	 *
-	 * @param serializerBuilder serializer builder, used at runtime
-	 * @return the RPC client with provided serializer builder
-	 */
-	public RpcClient withSerializerBuilder(SerializerBuilder serializerBuilder) {
-		this.serializerBuilder = serializerBuilder;
-		return this;
-	}
+		/**
+		 * Sets serializer for {@link Message} of this RPC client.
+		 *
+		 * @param serializer serializer for RPC message
+		 * @return the builder for RPC client with specified serializer for RPC message
+		 */
+		public Builder withSerializer(BinarySerializer<Message> serializer) {
+			checkNotBuilt(this);
+			RpcClient.this.serializer = serializer;
+			return this;
+		}
 
-	/**
-	 * Creates a client with some strategy. Consider some ready-to-use
-	 * strategies from {@link RpcStrategies}.
-	 *
-	 * @param requestSendingStrategy strategy of sending requests
-	 * @return the RPC client, which sends requests according to given strategy
-	 */
-	public RpcClient withStrategy(RpcStrategy requestSendingStrategy) {
-		this.strategy = requestSendingStrategy;
-		return this;
-	}
+		/**
+		 * Sets socket settings for this RPC client.
+		 *
+		 * @param socketSettings settings for socket
+		 * @return the builder for RPC client with specified socket settings
+		 */
+		public Builder withSocketSettings(SocketSettings socketSettings) {
+			checkNotBuilt(this);
+			RpcClient.this.socketSettings = socketSettings;
+			return this;
+		}
 
-	public RpcClient withStreamProtocol(MemSize defaultPacketSize) {
-		this.defaultPacketSize = defaultPacketSize;
-		return this;
-	}
+		/**
+		 * Sets some request sending strategy. Consider some ready-to-use
+		 * strategies from {@link RpcStrategies} or other {@link RpcStrategy} implementations.
+		 *
+		 * @param requestSendingStrategy strategy for sending requests
+		 * @return the builder for RPC client, which sends requests according to given strategy
+		 */
+		public Builder withStrategy(RpcStrategy requestSendingStrategy) {
+			checkNotBuilt(this);
+			RpcClient.this.newStrategy = requestSendingStrategy;
+			return this;
+		}
 
-	public RpcClient withStreamProtocol(MemSize defaultPacketSize, @Nullable FrameFormat frameFormat) {
-		this.defaultPacketSize = defaultPacketSize;
-		this.frameFormat = frameFormat;
-		return this;
-	}
+		/**
+		 * Sets a default RPC message packet size.
+		 *
+		 * @param defaultPacketSize default size of the message packet
+		 * @return the builder for RPC client with specified size of the message packet
+		 */
+		public Builder withStreamProtocol(MemSize defaultPacketSize) {
+			checkNotBuilt(this);
+			RpcClient.this.defaultPacketSize = defaultPacketSize;
+			return this;
+		}
 
-	public RpcClient withAutoFlush(Duration autoFlushInterval) {
-		this.autoFlushInterval = autoFlushInterval;
-		return this;
-	}
+		/**
+		 * Sets a default RPC message packet size as well as an optional {@link FrameFormat} to be used.
+		 *
+		 * @param defaultPacketSize default size of the message packet
+		 * @param frameFormat       optional message frame format
+		 * @return the builder for RPC client with specified size of the message packet and frame format
+		 */
+		public Builder withStreamProtocol(MemSize defaultPacketSize, @Nullable FrameFormat frameFormat) {
+			checkNotBuilt(this);
+			RpcClient.this.defaultPacketSize = defaultPacketSize;
+			RpcClient.this.frameFormat = frameFormat;
+			return this;
+		}
 
-	public RpcClient withKeepAlive(Duration keepAliveInterval) {
-		this.keepAliveInterval = keepAliveInterval;
-		return this;
-	}
+		/**
+		 * Sets an interval for an automatic message flush to the network.
+		 *
+		 * @param autoFlushInterval interval for an automatic message flush
+		 * @return the builder for RPC client with specified interval for an automatic message flush
+		 */
+		public Builder withAutoFlush(Duration autoFlushInterval) {
+			checkNotBuilt(this);
+			RpcClient.this.autoFlushInterval = autoFlushInterval;
+			return this;
+		}
 
-	/**
-	 * Waits for a specified time before connecting.
-	 *
-	 * @param connectTimeout time before connecting
-	 * @return the RPC client with connect timeout settings
-	 */
-	public RpcClient withConnectTimeout(Duration connectTimeout) {
-		this.connectTimeoutMillis = connectTimeout.toMillis();
-		return this;
-	}
+		/**
+		 * Sets an interval for sending keep-alive messages to the RPC server.
+		 * An interval of {@link Duration#ZERO} means no keep-alive message will be sent.
+		 *
+		 * @param keepAliveInterval interval for sending keep-alive messages
+		 * @return the builder for RPC client with specified interval for sending keep-alive messages
+		 */
+		public Builder withKeepAlive(Duration keepAliveInterval) {
+			checkNotBuilt(this);
+			RpcClient.this.keepAliveInterval = keepAliveInterval;
+			return this;
+		}
 
-	public RpcClient withReconnectInterval(Duration reconnectInterval) {
-		this.reconnectIntervalMillis = reconnectInterval.toMillis();
-		return this;
-	}
+		/**
+		 * Sets a duration for which a client will wait on connection to the RPC server before failing with connection
+		 * timeout error.
+		 *
+		 * @param connectTimeout timeout duration
+		 * @return the builder for RPC client with specified connect timeout
+		 */
+		public Builder withConnectTimeout(Duration connectTimeout) {
+			checkNotBuilt(this);
+			RpcClient.this.connectTimeoutMillis = connectTimeout.toMillis();
+			return this;
+		}
 
-	public RpcClient withSslEnabled(SSLContext sslContext, Executor sslExecutor) {
-		this.sslContext = sslContext;
-		this.sslExecutor = sslExecutor;
-		return this;
-	}
+		/**
+		 * Sets a duration for which a client will wait before trying to re-establish a connection to the RPC server.
+		 *
+		 * @param reconnectInterval reconnection interval
+		 * @return the builder for RPC client with specified reconnection interval
+		 */
+		public Builder withReconnectInterval(Duration reconnectInterval) {
+			checkNotBuilt(this);
+			RpcClient.this.reconnectIntervalMillis = reconnectInterval.toMillis();
+			return this;
+		}
 
-	public RpcClient withLogger(Logger logger) {
-		this.logger = logger;
-		return this;
-	}
+		/**
+		 * Adds ability to communicate with RPC server using secure connection.
+		 *
+		 * @param sslContext  SSL context to be used for encrypting/decrypting RPC messages
+		 * @param sslExecutor executor of SSL tasks
+		 * @return the builder for RPC client with secure network communication capabilities
+		 */
+		public Builder withSslEnabled(SSLContext sslContext, Executor sslExecutor) {
+			checkNotBuilt(this);
+			RpcClient.this.sslContext = sslContext;
+			RpcClient.this.sslExecutor = sslExecutor;
+			return this;
+		}
 
-	/**
-	 * Starts client in case of absence of connections
-	 *
-	 * @return the RPC client, which starts regardless of connection
-	 * availability
-	 */
-	public RpcClient withForcedStart() {
-		this.forcedStart = true;
-		return this;
-	}
+		/**
+		 * Sets a logger to be used on this RPC client.
+		 *
+		 * @param logger logger used for logging messages in this RPC client
+		 * @return the builder for RPC client with specified logger
+		 */
+		public Builder withLogger(Logger logger) {
+			checkNotBuilt(this);
+			RpcClient.this.logger = logger;
+			return this;
+		}
 
-	/**
-	 * Forcefully shutdowns RPC client even if there are active connections
-	 *
-	 * @return the RPC client, which shutdowns regardless of active connections
-	 */
-	public RpcClient withForcedShutdown() {
-		this.forcedShutdown = true;
-		return this;
+		/**
+		 * Makes RPC client forcefully shutdown even if there are active connections
+		 *
+		 * @return the builder for RPC client, which shutdowns regardless of active connections
+		 */
+		public Builder withForcedShutdown() {
+			RpcClient.this.forcedShutdown = true;
+			return this;
+		}
+
+		@Override
+		protected RpcClient doBuild() {
+			checkState(serializer != null);
+			return RpcClient.this;
+		}
 	}
-	// endregion
 
 	public SocketSettings getSocketSettings() {
 		return socketSettings;
 	}
 
 	@Override
-	public @NotNull Eventloop getEventloop() {
-		return eventloop;
-	}
-
-	@Override
 	public @NotNull Promise<Void> start() {
-		if (CHECK) Checks.checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
-		Checks.checkNotNull(messageTypes, "Message types must be specified");
-
-		Checks.checkState(stopPromise == null);
-
-		serializer = serializerBuilder.withSubclasses(Message.MESSAGE_TYPES, messageTypes).build(Message.class);
-
-		return Promise.<Map<Object, InetSocketAddress>>ofCallback(cb -> strategy.getDiscoveryService().discover(null, cb))
-				.map(result -> {
-					this.previouslyDiscovered = result;
-					Collection<InetSocketAddress> addresses = result.values();
-
-					this.addresses = new ArrayList<>(addresses);
-
-					for (InetSocketAddress address : addresses) {
-						if (!connectsStatsPerAddress.containsKey(address)) {
-							connectsStatsPerAddress.put(address, new RpcConnectStats(eventloop));
-						}
-					}
-
-					return addresses;
-				})
-				.then(addresses -> Promises.all(
-								addresses.stream()
-										.map(address -> {
-											logger.info("Connecting: {}", address);
-											return connect(address)
-													.map(($, e) -> null);
-										}))
-						.then(() -> !forcedStart && requestSender instanceof NoSenderAvailable ?
-								Promise.ofException(START_EXCEPTION) :
-								Promise.complete()))
-				.whenResult(this::rediscover)
-				.whenException(this::doStop);
+		checkInReactorThread(this);
+		checkState(stopPromise == null);
+		return changeStrategy(newStrategy, false);
 	}
 
-	@Override
-	public @NotNull Promise<Void> stop() {
-		if (CHECK) Checks.checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
-		if (stopPromise != null) return stopPromise;
+	public Promise<Void> changeStrategy(RpcStrategy newStrategy, boolean retry) {
+		checkInReactorThread(this);
 
-		doStop();
-		return stopPromise;
-	}
-
-	private void doStop() {
-		assert stopPromise == null;
-
-		stopPromise = new SettablePromise<>();
-		if (connections.size() == 0) {
-			stopPromise.set(null);
-			return;
+		if (stopPromise != null) {
+			return Promise.ofException(CLIENT_IS_STOPPED);
 		}
 
-		for (RpcClientConnection connection : connections.values()) {
+		if (newStrategyPromise != null) {
+			SettablePromise<Void> promise = newStrategyPromise;
+			newStrategyPromise = null;
+			promise.setException(SET_STRATEGY_EXCEPTION);
+			if (newStrategyPromise != null) {
+				return Promise.ofException(SET_STRATEGY_EXCEPTION);
+			}
+		}
+
+		SettablePromise<Void> newStrategyPromise = new SettablePromise<>();
+		this.newStrategy = newStrategy;
+		this.newStrategyPromise = newStrategyPromise;
+		this.newStrategyRetry = retry;
+
+		for (InetSocketAddress address : newStrategy.getAddresses()) {
+			if (connections.containsKey(address)) continue;
+			if (pendingConnections.contains(address)) continue;
+			pendingConnections.add(address);
+			newConnections.add(address);
+			logger.info("Connecting: {}", address);
+			connect(address);
+		}
+
+		updateStrategy();
+
+		return newStrategyPromise;
+	}
+
+	@Override
+	public Promise<Void> stop() {
+		checkInReactorThread(this);
+		if (stopPromise != null) return stopPromise;
+
+		stopPromise = new SettablePromise<>();
+		if (connections.isEmpty()) {
+			onClientStop();
+			return stopPromise;
+		}
+
+		pendingConnections.clear();
+		for (RpcClientConnection connection : new ArrayList<>(connections.values())) {
 			if (forcedShutdown) {
 				connection.forceShutdown();
 			} else {
 				connection.shutdown();
 			}
 		}
+
+		return stopPromise;
 	}
 
-	private Promise<Void> connect(InetSocketAddress address) {
-		return AsyncTcpSocketNio.connect(address, connectTimeoutMillis, socketSettings)
-				.whenResult(asyncTcpSocketImpl -> {
-					if (stopPromise != null || !addresses.contains(address)) {
-						asyncTcpSocketImpl.close();
+	private void connect(InetSocketAddress address) {
+		TcpSocket.connect(reactor, address, connectTimeoutMillis, socketSettings)
+			.whenResult(tcpSocket -> {
+				newConnections.remove(address);
+				if (!pendingConnections.contains(address) || stopPromise != null) {
+					tcpSocket.close();
+					return;
+				}
+
+				statsSocket.onConnect(tcpSocket);
+				tcpSocket.setInspector(statsSocket);
+
+				ITcpSocket socket = sslContext == null ?
+					tcpSocket :
+					wrapClientSocket(reactor, tcpSocket, sslContext, sslExecutor);
+
+				PeerStream stream = new PeerStream(socket, serializer, defaultPacketSize,
+							autoFlushInterval, false); // , statsSerializer, statsDeserializer, statsCompressor, statsDecompressor);
+					
+				RpcClientConnection connection = new RpcClientConnection(reactor, this, address, stream, keepAliveInterval.toMillis());
+				stream.setListener(connection);
+
+				// jmx
+				if (isMonitoring()) {
+					connection.startMonitoring();
+				}
+			
+				// jmx
+				connectsStatsPerAddress.computeIfAbsent(address, $ -> new RpcConnectStats(reactor)).recordSuccessfulConnect();
+				logger.info("Connection to {} established", address);
+
+				pendingConnections.remove(address);
+				connections.put(address, connection);
+				updateStrategy();
+			})
+			.whenException(e -> {
+				newConnections.remove(address);
+				logger.warn("Connection {} failed", address, e);
+				if (!pendingConnections.contains(address) || stopPromise != null) {
+					return;
+				}
+				reactor.delayBackground(reconnectIntervalMillis, () -> {
+					if (!pendingConnections.contains(address) || stopPromise != null) {
 						return;
 					}
-					statsSocket.onConnect(asyncTcpSocketImpl);
-					asyncTcpSocketImpl.setInspector(statsSocket);
-					AsyncTcpSocket socket = sslContext == null ?
-							asyncTcpSocketImpl :
-							wrapClientSocket(asyncTcpSocketImpl, sslContext, sslExecutor);
-					PeerStream stream = new PeerStream(socket, serializer, defaultPacketSize,
-							autoFlushInterval, false); // , statsSerializer, statsDeserializer, statsCompressor, statsDecompressor);
-					RpcClientConnection connection = new RpcClientConnection(eventloop, this, address, stream, keepAliveInterval.toMillis());
-					stream.setListener(connection);
-
-					// jmx
-					if (isMonitoring()) {
-						connection.startMonitoring();
-					}
-					connections.put(address, connection);
-					requestSender = nonNullElseGet(strategy.createSender(pool), NoSenderAvailable::new);
-
-					// jmx
-					connectsStatsPerAddress.get(address).recordSuccessfulConnect();
-
-					logger.info("Connection to {} established", address);
-				})
-				.whenException(e -> {
-					logger.warn("Connection {} failed: {}", address, e);
-					if (stopPromise == null) {
-						processClosedConnection(address);
-					}
-				})
-				.toVoid();
-	}
-
-	void removeConnection(InetSocketAddress address) {
-		if (connections.remove(address) == null) return;
-		requestSender = nonNullElseGet(strategy.createSender(pool), NoSenderAvailable::new);
-		logger.info("Connection closed: {}", address);
-		processClosedConnection(address);
-	}
-
-	private void processClosedConnection(InetSocketAddress address) {
-		if (stopPromise == null) {
-			if (!addresses.contains(address)) return;
-			//jmx
-			connectsStatsPerAddress.get(address).recordFailedConnect();
-			eventloop.delayBackground(reconnectIntervalMillis, () -> {
-				if (stopPromise == null) {
 					logger.info("Reconnecting: {}", address);
 					connect(address);
+				});
+				updateStrategy();
+			});
+	}
+
+	void onClosedConnection(InetSocketAddress address) {
+		if (connections.remove(address) == null) {
+			return;
+		}
+		logger.info("Connection closed: {}", address);
+		if (stopPromise == null) {
+			pendingConnections.add(address);
+			reactor.delayBackground(reconnectIntervalMillis, () -> {
+				if (!pendingConnections.contains(address) || stopPromise != null) {
+					return;
 				}
+				logger.info("Reconnecting: {}", address);
+				connect(address);
 			});
 		} else {
-			if (connections.size() == 0) {
-				stopPromise.set(null);
+			if (connections.isEmpty()) {
+				onClientStop();
 			}
+		}
+		updateStrategy();
+	}
+
+	private void onClientStop() {
+		assert stopPromise != null;
+
+		if (newStrategyPromise != null) {
+			SettablePromise<Void> promise = this.newStrategyPromise;
+			this.newStrategyPromise = null;
+			promise.setException(CLIENT_IS_STOPPED);
+			assert this.newStrategyPromise == null;
+		}
+
+		stopPromise.set(null);
+	}
+
+	private void updateStrategy() {
+		if (stopPromise != null) {
+			return;
+		}
+		if (newStrategy != null && newConnections.isEmpty()) {
+			RpcStrategy newStrategy = this.newStrategy;
+			RpcSender newRequestSender = newStrategy.createSender(pool);
+			SettablePromise<Void> newStrategyPromise = this.newStrategyPromise;
+
+			if (newRequestSender == null && newStrategyRetry) {
+				return;
+			}
+
+			this.newStrategy = null;
+			this.newStrategyPromise = null;
+
+			if (newRequestSender != null) {
+				this.strategy = newStrategy;
+				this.requestSender = newRequestSender;
+			}
+
+			Set<InetSocketAddress> strategyAddresses = this.strategy.getAddresses();
+			Set<InetSocketAddress> failedConnections = new HashSet<>();
+			for (Iterator<InetSocketAddress> i = pendingConnections.iterator(); i.hasNext(); ) {
+				InetSocketAddress pendingConnection = i.next();
+				if (!strategyAddresses.contains(pendingConnection)) {
+					failedConnections.add(pendingConnection);
+					i.remove();
+				}
+			}
+			new ArrayList<>(connections.keySet()).stream()
+				.filter(not(strategyAddresses::contains))
+				.map(connections::remove).toList()
+				.forEach(RpcClientConnection::shutdown);
+
+			if (newRequestSender != null) {
+				newStrategyPromise.set(null);
+			} else {
+				newStrategyPromise.setException(new RpcException("Could not establish connection to " + failedConnections));
+			}
+
+		} else {
+			requestSender = nonNullElseGet(strategy.createSender(pool), NoSenderAvailable::new);
 		}
 	}
 
@@ -425,14 +550,14 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 	 * @param request request to a server
 	 * @param timeout timeout in milliseconds. If there is no answer from the server after the timeout passes,
 	 *                the request will end exceptionally with {@link AsyncTimeoutException}.
-	 *                Note, that setting a timeout schedules a task to the {@link Eventloop}, so a lot of
+	 *                Note, that setting a timeout schedules a task to the {@link Reactor}, so a lot of
 	 *                requests with large timeouts may degrade performance. In the most common scenarios
 	 *                timeouts for RPC requests should not be very big (a few seconds should be enough)
 	 * @param cb      a callback that will be completed after receiving a response or encountering some error
 	 */
 	@Override
 	public <I, O> void sendRequest(I request, int timeout, Callback<O> cb) {
-		if (CHECK) Checks.checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
+		if (CHECKS) checkInReactorThread(this);
 		if (timeout > 0) {
 			requestSender.sendRequest(request, timeout, cb);
 		} else {
@@ -442,66 +567,26 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 
 	@Override
 	public <I, O> void sendRequest(I request, Callback<O> cb) {
-		if (CHECK) Checks.checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
+		if (CHECKS) checkInReactorThread(this);
 		requestSender.sendRequest(request, cb);
 	}
 
-	private void rediscover() {
-		if (stopPromise != null) return;
-
-		strategy.getDiscoveryService().discover(previouslyDiscovered, (result, e) -> {
-			if (stopPromise != null) return;
-
-			if (e == null) {
-				updateAddresses(result);
-				rediscover();
-			} else {
-				logger.warn("Could not discover addresses", e);
-				eventloop.delayBackground(Duration.ofSeconds(1), this::rediscover);
-			}
-		});
-	}
-
-	private void updateAddresses(Map<Object, InetSocketAddress> newAddresses) {
-		this.previouslyDiscovered = newAddresses;
-		List<InetSocketAddress> previousAddresses = this.addresses;
-		this.addresses = new ArrayList<>(newAddresses.values());
-
-		boolean changed = false;
-		for (InetSocketAddress address : previousAddresses) {
-			if (!this.addresses.contains(address)) {
-				connections.remove(address).shutdown();
-				connectsStatsPerAddress.remove(address);
-				changed = true;
-			}
-		}
-		if (changed) {
-			requestSender = nonNullElseGet(strategy.createSender(pool), NoSenderAvailable::new);
-		}
-		for (InetSocketAddress address : this.addresses) {
-			if (!previousAddresses.contains(address)) {
-				connectsStatsPerAddress.put(address, new RpcConnectStats(eventloop));
-				connect(address);
-			}
-		}
-	}
-
-	public IRpcClient adaptToAnotherEventloop(Eventloop anotherEventloop) {
-		if (anotherEventloop == this.eventloop) {
+	public IRpcClient adaptToAnotherReactor(Reactor anotherReactor) {
+		if (anotherReactor == this.reactor) {
 			return this;
 		}
 
 		return new IRpcClient() {
 			@Override
 			public <I, O> void sendRequest(I request, int timeout, Callback<O> cb) {
-				if (CHECK) Checks.checkState(anotherEventloop.inEventloopThread(), "Not in eventloop thread");
+				if (CHECKS) checkInReactorThread(anotherReactor);
 				if (timeout > 0) {
-					anotherEventloop.startExternalTask();
-					eventloop.execute(() ->
-							requestSender.sendRequest(request, timeout, (Callback<O>) (result, e) -> {
-								anotherEventloop.execute(() -> cb.accept(result, e));
-								anotherEventloop.completeExternalTask();
-							}));
+					anotherReactor.startExternalTask();
+					reactor.execute(() ->
+						requestSender.sendRequest(request, timeout, (Callback<O>) (result, e) -> {
+							anotherReactor.execute(() -> cb.accept(result, e));
+							anotherReactor.completeExternalTask();
+						}));
 				} else {
 					cb.accept(null, new AsyncTimeoutException("RPC request has timed out"));
 				}
@@ -510,64 +595,56 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 		};
 	}
 
-	@VisibleForTesting
-	public RpcSender getRequestSender() {
-		return requestSender;
-	}
-
 	@Override
 	public String toString() {
 		return "RpcClient{" + connections + '}';
 	}
 
-	private static final class NoSenderAvailable implements RpcSender {
+	public static final class NoSenderAvailable implements RpcSender {
 		@Override
-		public <I, O> void sendRequest(I request, int timeout, @NotNull Callback<O> cb) {
+		public <I, O> void sendRequest(I request, int timeout, Callback<O> cb) {
 			cb.accept(null, NO_SENDER_AVAILABLE_EXCEPTION);
 		}
 	}
 
-	private static final class NoServersStrategy implements RpcStrategy {
+	public static final class NoServersRpcStrategy implements RpcStrategy {
 		@Override
-		public DiscoveryService getDiscoveryService() {
-			return DiscoveryService.constant(emptyMap());
+		public Set<InetSocketAddress> getAddresses() {
+			return Set.of();
 		}
 
 		@Override
-		public @Nullable RpcSender createSender(RpcClientConnectionPool pool) {
+		public RpcSender createSender(RpcClientConnectionPool pool) {
 			return null;
 		}
 	}
 
 	// jmx
-	@JmxOperation(description = "enable monitoring " +
-			"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled) ]")
+	@JmxOperation(description =
+		"enable monitoring " +
+		"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled) ]")
 	public void startMonitoring() {
 		monitoring = true;
-		for (InetSocketAddress address : addresses) {
-			RpcClientConnection connection = connections.get(address);
-			if (connection != null) {
-				connection.startMonitoring();
-			}
+		for (RpcClientConnection connection : connections.values()) {
+			connection.startMonitoring();
 		}
 	}
 
-	@JmxOperation(description = "disable monitoring " +
-			"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled) ]")
+	@JmxOperation(description =
+		"disable monitoring " +
+		"[ when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled) ]")
 	public void stopMonitoring() {
 		monitoring = false;
-		for (InetSocketAddress address : addresses) {
-			RpcClientConnection connection = connections.get(address);
-			if (connection != null) {
-				connection.stopMonitoring();
-			}
+		for (RpcClientConnection connection : connections.values()) {
+			connection.stopMonitoring();
 		}
 	}
 
-	@JmxAttribute(description = "when monitoring is enabled more stats are collected, but it causes more overhead " +
-			"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled)")
+	@JmxAttribute(description =
+		"when monitoring is enabled more stats are collected, but it causes more overhead " +
+		"(for example, responseTime and requestsStatsPerClass are collected only when monitoring is enabled)")
 	public boolean isMonitoring() {
 		return monitoring;
 	}
@@ -580,15 +657,15 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 	@JmxAttribute(reducer = JmxReducerSum.class)
 	public long getTotalSuccessfulConnects() {
 		return connectsStatsPerAddress.values().stream()
-				.mapToLong(RpcConnectStats::getSuccessfulConnects)
-				.sum();
+			.mapToLong(RpcConnectStats::getSuccessfulConnects)
+			.sum();
 	}
 
 	@JmxAttribute(reducer = JmxReducerSum.class)
 	public long getTotalFailedConnects() {
 		return connectsStatsPerAddress.values().stream()
-				.mapToLong(RpcConnectStats::getFailedConnects)
-				.sum();
+			.mapToLong(RpcConnectStats::getFailedConnects)
+			.sum();
 	}
 
 	@JmxAttribute(description = "request stats distributed by request class")
@@ -620,8 +697,9 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 		return count;
 	}
 
-	@JmxAttribute(description = "exception that occurred because of protocol error " +
-			"(serialization, deserialization, compression, decompression, etc)")
+	@JmxAttribute(description =
+		"exception that occurred because of protocol error " +
+		"(serialization, deserialization, compression, decompression, etc)")
 	public ExceptionStats getLastProtocolError() {
 		return lastProtocolError;
 	}
@@ -633,12 +711,12 @@ public final class RpcClient implements IRpcClient, EventloopService, WithInitia
 
 	@JmxAttribute
 	public List<String> getUnresponsiveServers() {
-		if (stopPromise != null) return Collections.emptyList();
+		if (stopPromise != null) return List.of();
 
 		return connectsStatsPerAddress.entrySet().stream()
-				.filter(entry -> !entry.getValue().isConnected())
-				.map(entry -> entry.getKey().toString())
-				.collect(toList());
+			.filter(entry -> !entry.getValue().isConnected())
+			.map(entry -> entry.getKey().toString())
+			.collect(toList());
 	}
 
 	RpcRequestStats ensureRequestStatsPerClass(Class<?> requestClass) {

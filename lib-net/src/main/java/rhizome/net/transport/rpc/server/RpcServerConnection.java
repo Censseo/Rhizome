@@ -1,7 +1,5 @@
 package rhizome.net.transport.rpc.server;
 
-import static org.junit.jupiter.api.DynamicTest.stream;
-
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.net.InetAddress;
@@ -20,7 +18,6 @@ import io.activej.jmx.stats.ValueStats;
 import io.activej.promise.Promise;
 import io.activej.reactor.AbstractReactive;
 import io.activej.reactor.Reactor;
-import io.activej.reactor.nio.NioReactor;
 import io.activej.rpc.protocol.RpcRemoteException;
 import io.activej.rpc.server.RpcRequestHandler;
 import lombok.extern.slf4j.Slf4j;
@@ -76,7 +73,7 @@ public class RpcServerConnection extends AbstractReactive implements ChannelInpu
 	 */
 	@SuppressWarnings("unchecked")
 	private Promise<Object> serve(Object request) {
-		RpcRequestHandler<Object, Object> requestHandler = (RpcRequestHandler<Object, Object>) handlers.get(request.getClass());
+		var requestHandler = (RpcRequestHandler<Object, Object>) handlers.get(request.getClass());
 		if (requestHandler == null) {
 			return Promise.ofException(new MalformedDataException("Failed to process request " + request));
 		}
@@ -92,7 +89,7 @@ public class RpcServerConnection extends AbstractReactive implements ChannelInpu
         var messageCode = message.messageType();
         Object messageData = message.data();
         serve(messageData)
-            .run((result, e) -> {
+            .subscribe((result, e) -> {
                 if (startTime != 0) {
                     int value = (int) (System.currentTimeMillis() - startTime);
                     requestHandlingTime.recordValue(value);

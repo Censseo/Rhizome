@@ -11,28 +11,27 @@ import io.activej.async.exception.AsyncTimeoutException;
 import io.activej.common.Checks;
 import io.activej.common.recycle.Recyclers;
 import io.activej.common.time.Stopwatch;
-import io.activej.datastream.StreamDataAcceptor;
+import io.activej.datastream.supplier.StreamDataAcceptor;
 import io.activej.eventloop.Eventloop;
-import io.activej.eventloop.schedule.ScheduledRunnable;
 import io.activej.jmx.api.JmxRefreshable;
 import io.activej.jmx.api.attribute.JmxAttribute;
 import io.activej.jmx.api.attribute.JmxReducers.JmxReducerSum;
 import io.activej.jmx.stats.EventStats;
+import io.activej.reactor.AbstractReactive;
+import io.activej.reactor.Reactor;
+import io.activej.reactor.schedule.ScheduledRunnable;
 import io.activej.rpc.client.jmx.RpcRequestStats;
 import io.activej.rpc.client.sender.RpcSender;
-import io.activej.rpc.protocol.RpcControlMessage;
-import io.activej.rpc.protocol.RpcException;
-import io.activej.rpc.protocol.RpcMandatoryData;
-import io.activej.rpc.protocol.RpcOverloadException;
-import io.activej.rpc.protocol.RpcRemoteException;
+import io.activej.rpc.protocol.*;
+import org.jetbrains.annotations.Nullable;
+import org.jetbrains.annotations.NotNull;
+
 import rhizome.net.protocol.Message;
 import rhizome.net.protocol.MessageCode;
 import rhizome.net.transport.ChannelOutput;
 import rhizome.net.transport.rpc.Listener;
 import rhizome.net.transport.rpc.PeerStream;
 
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
 import org.slf4j.Logger;
 
 import java.net.InetSocketAddress;
@@ -42,12 +41,13 @@ import java.util.HashSet;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
+import static io.activej.reactor.Reactive.checkInReactorThread;
 import static io.activej.common.Checks.checkState;
 import static org.slf4j.LoggerFactory.getLogger;
 
-public final class RpcClientConnection implements ChannelOutput, Listener, RpcSender, JmxRefreshable {
+public final class RpcClientConnection extends AbstractReactive implements ChannelOutput, Listener, RpcSender, JmxRefreshable {
 	private static final Logger logger = getLogger(RpcClientConnection.class);
-	private static final boolean CHECK = Checks.isEnabled(RpcClientConnection.class);
+	private static final boolean CHECKS = Checks.isEnabled(RpcClientConnection.class);
 
 	private static final RpcException CONNECTION_UNRESPONSIVE = new RpcException("Unresponsive connection");
 	private static final RpcOverloadException RPC_OVERLOAD_EXCEPTION = new RpcOverloadException("RPC client is overloaded");
@@ -56,7 +56,6 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 	private boolean overloaded = false;
 	private boolean closed;
 
-	private final Eventloop eventloop;
 	private final RpcClient rpcClient;
 	private final PeerStream stream;
 	private final InetSocketAddress address;
@@ -64,7 +63,7 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 
 	private ArrayList<Message> initialBuffer = new ArrayList<>();
 
-	private int cookie = 0;
+	private int index = 0;
 	private boolean serverClosing;
 
 	// JMX
@@ -77,9 +76,10 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 	private final long keepAliveMillis;
 	private boolean pongReceived;
 
-	RpcClientConnection(Eventloop eventloop, RpcClient peerClient, InetSocketAddress address, PeerStream stream,
-			long keepAliveMillis) {
-		this.eventloop = eventloop;
+	RpcClientConnection(
+		Reactor reactor, RpcClient peerClient, InetSocketAddress address, PeerStream stream, long keepAliveMillis
+	) {
+		super(reactor);
 		this.rpcClient = peerClient;
 		this.stream = stream;
 		this.address = address;
@@ -94,14 +94,14 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 
 	@Override
 	public <I, O> void sendRequest(I request, int timeout, @NotNull Callback<O> cb) {
-		if (CHECK) checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
+		if (CHECKS) checkInReactorThread(this);
 
 		// jmx
 		totalRequests.recordEvent();
 		connectionRequests.recordEvent();
 
 		if (!overloaded || request instanceof RpcMandatoryData) {
-			cookie++;
+			index++;
 
 			// jmx
 			if (monitoring) {
@@ -109,27 +109,27 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 			}
 
 			if (timeout == Integer.MAX_VALUE) {
-				activeRequests.put(cookie, cb);
+				activeRequests.put(index, cb);
 			} else {
-				ScheduledCallback<O> scheduledRunnable = new ScheduledCallback<>(eventloop.currentTimeMillis() + timeout, cookie, cb);
-				eventloop.scheduleBackground(scheduledRunnable);
-				activeRequests.put(cookie, scheduledRunnable);
+				ScheduledCallback<O> scheduledRunnable = new ScheduledCallback<>(reactor.currentTimeMillis() + timeout, cookie, cb);
+				reactor.scheduleBackground(scheduledRunnable);
+				activeRequests.put(index, scheduledRunnable);
 			}
 
 			// TODO
-			// downstreamDataAcceptor.accept(Message.of(cookie, request));
+			// downstreamDataAcceptor.accept(new Message(index, request));
 		} else {
 			doProcessOverloaded(cb);
 		}
 	}
 
-	private class ScheduledCallback<O> extends ScheduledRunnable implements Callback<O> {
+	public class ScheduledCallback<O> extends ScheduledRunnable implements Callback<O> {
 		final Callback<O> cb;
-		final int cookie;
+		final int index;
 
-		ScheduledCallback(long timestamp, int cookie, @NotNull Callback<O> cb) {
+		ScheduledCallback(long timestamp, int index, Callback<O> cb) {
 			super(timestamp);
-			this.cookie = cookie;
+			this.index = index;
 			this.cb = cb;
 		}
 
@@ -145,7 +145,7 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 
 		@Override
 		public void run() {
-			Callback<?> expiredCb = activeRequests.remove(cookie);
+			Callback<?> expiredCb = activeRequests.remove(index);
 			if (expiredCb != null) {
 				assert expiredCb == this;
 				// jmx
@@ -162,25 +162,23 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 	}
 
 	@Override
-	public <I, O> void sendRequest(I request, @NotNull Callback<O> cb) {
-		if (CHECK) checkState(eventloop.inEventloopThread(), "Not in eventloop thread");
-
+	public <I, O> void sendRequest(I request, Callback<O> cb) {
+		if (CHECKS) checkInReactorThread(this);
 		// jmx
 		totalRequests.recordEvent();
 		connectionRequests.recordEvent();
 
 		if (!overloaded || request instanceof RpcMandatoryData) {
-			cookie++;
+			index++;
 
 			// jmx
 			if (monitoring) {
 				cb = doJmxMonitoring(request, Integer.MAX_VALUE, cb);
 			}
 
-			activeRequests.put(cookie, cb);
+			activeRequests.put(index, cb);
 
-			// TODO
-			// downstreamDataAcceptor.accept(Message.of(cookie, request));
+			// downstreamDataAcceptor.accept(new RpcMessage(index, request));
 		} else {
 			doProcessOverloaded(cb);
 		}
@@ -203,6 +201,7 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 
 	@Override
 	public void accept(Message message) {
+		if (CHECKS) checkInReactorThread(this);
 		if (message.data().getClass() == RpcRemoteException.class) {
 			processErrorMessage(message);
 		} else if (message.data().getClass() == RpcControlMessage.class) {
@@ -211,10 +210,10 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 
 			//TODO
 			// @SuppressWarnings("unchecked")
-			// Callback<Object> cb = (Callback<Object>) activeRequests.remove(message.getCookie());
+			// Callback<Object> cb = (Callback<Object>) activeRequests.remove(message.getIndex());
 			// if (cb == null) return;
 
-			// cb.accept(message.getData(), null);
+			// cb.accept(message.data(), null);
 			if (serverClosing && activeRequests.size() == 0) {
 				shutdown();
 			}
@@ -230,7 +229,7 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 		rpcClient.getGeneralRequestsStats().getServerExceptions().recordException(remoteException, null);
 
 		// TODO
-		// Callback<?> cb = activeRequests.remove(message.getCookie());
+		// Callback<?> cb = activeRequests.remove(message.getIndex());
 		// if (cb != null) {
 		// 	cb.accept(null, remoteException);
 		// }
@@ -254,8 +253,8 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 		if (isClosed()) return;
 		if (keepAliveMillis == 0) return;
 		pongReceived = false;
-		downstreamDataAcceptor.accept(Message.of(MessageCode.SYNC, RpcControlMessage.PING));
-		eventloop.delayBackground(keepAliveMillis, () -> {
+		// downstreamDataAcceptor.accept(new RpcMessage(RpcControlMessage.PING));
+		reactor.delayBackground(keepAliveMillis, () -> {
 			if (isClosed()) return;
 			if (!pongReceived) {
 				onReceiverError(CONNECTION_UNRESPONSIVE);
@@ -322,11 +321,11 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 		stream.close();
 		downstreamDataAcceptor = null;
 		closed = true;
-		rpcClient.removeConnection(address);
+		rpcClient.onClosedConnection(address);
 
 		while (!activeRequests.isEmpty()) {
-			for (Integer cookie : new HashSet<>(activeRequests.keySet())) {
-				Callback<?> cb = activeRequests.remove(cookie);
+			for (Integer i : new HashSet<>(activeRequests.keySet())) {
+				Callback<?> cb = activeRequests.remove(i);
 				if (cb != null) {
 					cb.accept(null, new AsyncCloseException("Connection closed"));
 				}
@@ -372,18 +371,19 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 		connectionStats.refresh(timestamp);
 	}
 
-	private final class JmxConnectionMonitoringResultCallback<T> implements Callback<T> {
+	public final class JmxConnectionMonitoringResultCallback<T> implements Callback<T> {
 		private final Stopwatch stopwatch;
 		private final Callback<T> callback;
 		private final RpcRequestStats requestStatsPerClass;
 		private final long dueTimestamp;
 
-		public JmxConnectionMonitoringResultCallback(RpcRequestStats requestStatsPerClass, Callback<T> cb,
-				long timeout) {
+		public JmxConnectionMonitoringResultCallback(
+			RpcRequestStats requestStatsPerClass, Callback<T> cb, long timeout
+		) {
 			this.stopwatch = Stopwatch.createStarted();
 			this.callback = cb;
 			this.requestStatsPerClass = requestStatsPerClass;
-			this.dueTimestamp = eventloop.currentTimeMillis() + timeout;
+			this.dueTimestamp = reactor.currentTimeMillis() + timeout;
 		}
 
 		@Override
@@ -396,7 +396,7 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 		}
 
 		private void onResult(T result) {
-			int responseTime = timeElapsed();
+			long responseTime = timeElapsed();
 			connectionStats.getResponseTime().recordValue(responseTime);
 			requestStatsPerClass.getResponseTime().recordValue(responseTime);
 			rpcClient.getGeneralRequestsStats().getResponseTime().recordValue(responseTime);
@@ -404,9 +404,9 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 			callback.accept(result, null);
 		}
 
-		private void onException(@NotNull Exception e) {
+		private void onException(Exception e) {
 			if (e instanceof RpcRemoteException) {
-				int responseTime = timeElapsed();
+				long responseTime = timeElapsed();
 				connectionStats.getFailedRequests().recordEvent();
 				connectionStats.getResponseTime().recordValue(responseTime);
 				connectionStats.getServerExceptions().recordException(e, null);
@@ -425,12 +425,12 @@ public final class RpcClientConnection implements ChannelOutput, Listener, RpcSe
 			callback.accept(null, e);
 		}
 
-		private int timeElapsed() {
-			return (int) stopwatch.elapsed(TimeUnit.MILLISECONDS);
+		private long timeElapsed() {
+			return stopwatch.elapsed(TimeUnit.MILLISECONDS);
 		}
 
 		private void recordOverdue() {
-			int overdue = (int) (System.currentTimeMillis() - dueTimestamp);
+			long overdue = System.currentTimeMillis() - dueTimestamp;
 			if (overdue > 0) {
 				connectionStats.getOverdues().recordValue(overdue);
 				requestStatsPerClass.getOverdues().recordValue(overdue);

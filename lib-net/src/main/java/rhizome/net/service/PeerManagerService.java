@@ -1,8 +1,9 @@
-package rhizome.services.network;
+package rhizome.net.service;
 
 import io.activej.eventloop.Eventloop;
 import rhizome.net.p2p.DiscoveryService;
 import rhizome.net.protocol.Message;
+import rhizome.services.network.PeerManagerServiceImpl;
 
 /**
  * This service execute the service manager process.

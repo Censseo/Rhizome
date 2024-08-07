@@ -1,4 +1,4 @@
-package rhizome.services.network;
+package rhizome.net.service;
 
 import org.jetbrains.annotations.NotNull;
 

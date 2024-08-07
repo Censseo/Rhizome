@@ -16,7 +16,7 @@ import rhizome.net.p2p.PeerSystem;
 import rhizome.net.p2p.gossip.GossipSystem;
 import rhizome.net.p2p.peer.Peer;
 import rhizome.net.p2p.peer.PeerInitializer;
-import rhizome.services.network.PeerManagerService;
+import rhizome.net.service.PeerManagerService;
 
 import static io.activej.config.converter.ConfigConverters.ofList;
 // import static io.activej.config.converter.ConfigConverters.ofString;

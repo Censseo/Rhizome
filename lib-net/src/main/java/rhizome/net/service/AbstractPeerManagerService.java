@@ -1,8 +1,7 @@
-package rhizome.services.network;
+package rhizome.net.service;
 
 import java.time.Duration;
 import java.util.Map;
-import java.util.Map.Entry;
 import java.util.HashMap;
 
 import org.jetbrains.annotations.NotNull;
@@ -11,7 +10,6 @@ import org.jetbrains.annotations.Nullable;
 import io.activej.async.function.AsyncRunnable;
 import io.activej.async.function.AsyncRunnables;
 import io.activej.async.service.ReactiveService;
-import io.activej.eventloop.Eventloop;
 import io.activej.promise.Promise;
 import io.activej.promise.Promises;
 import io.activej.reactor.AbstractReactive;
@@ -20,6 +18,7 @@ import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import rhizome.net.p2p.DiscoveryService;
 import rhizome.net.p2p.peer.Peer;
+import rhizome.services.network.PeerManagerService;
 
 import static java.util.Collections.unmodifiableMap;
 import static java.util.Map.Entry;

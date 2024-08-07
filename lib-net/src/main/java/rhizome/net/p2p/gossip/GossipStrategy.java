@@ -2,12 +2,13 @@ package rhizome.net.p2p.gossip;
 
 import io.activej.async.callback.Callback;
 import io.activej.rpc.client.RpcClientConnectionPool;
-import io.activej.rpc.client.sender.DiscoveryService;
 import io.activej.rpc.client.sender.RpcSender;
-import io.activej.rpc.client.sender.RpcStrategy;
+import io.activej.rpc.client.sender.strategy.RpcStrategy;
+import rhizome.net.p2p.DiscoveryService;
 
 import org.jetbrains.annotations.NotNull;
 
+import java.net.InetSocketAddress;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -102,5 +103,11 @@ public class GossipStrategy implements RpcStrategy {
 			}
 			senders.get(lowerIndex).sendRequest(request, timeout, cb);
 		}
+	}
+
+	@Override
+	public Set<InetSocketAddress> getAddresses() {
+		// TODO Auto-generated method stub
+		throw new UnsupportedOperationException("Unimplemented method 'getAddresses'");
 	}
 }

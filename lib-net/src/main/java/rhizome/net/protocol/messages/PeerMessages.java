@@ -5,6 +5,7 @@ import java.util.Map;
 import io.activej.rpc.protocol.RpcMandatoryData;
 import io.activej.serializer.annotations.Deserialize;
 import io.activej.serializer.annotations.Serialize;
+import io.activej.serializer.annotations.SerializeRecord;
 import rhizome.net.protocol.MessageCode;
 
 import static java.util.Map.entry;
@@ -35,27 +36,8 @@ public class PeerMessages {
         )
     );
 
-    public static final class Connect implements RpcMandatoryData {
-        @Serialize public final String key;
-
-        public Connect(@Deserialize("key") String key) {
-            if (key == null || key.isEmpty()) {
-                throw new IllegalArgumentException("Key cannot be null or empty");
-            }
-            this.key = key;
-        }
-    }
-
-    public static final class Disconnect implements RpcMandatoryData {
-        @Serialize public final String key;
-
-        public Disconnect(@Deserialize("key") String key) {
-            if (key == null || key.isEmpty()) {
-                throw new IllegalArgumentException("Key cannot be null or empty");
-            }
-            this.key = key;
-        }
-    }
+    @SerializeRecord public record Connect (String key){}
+    @SerializeRecord public record Disconnect (String key){}
 
     public static final class Error implements RpcMandatoryData {
         @Serialize public final String key;
